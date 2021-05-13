@@ -22,14 +22,24 @@ parse_requests (Sock) ->
 		Msg = string:replace(binary_to_list(BinMsg), "\n", ""),
 		[Req | Args] = string:split(string:replace(Msg, ":", ""), " ", all),
 		case Req of 
-			"login" -> loginmanager:login(Sock, Args);
-			"logout" -> loginmanager:logout(Sock, Args);
-			"create_account" -> loginmanager:create_account(Sock, Args);
-			"close_account" -> loginmanager:close_account(Sock, Args);
-			"online" -> loginmanager:online(Sock);
-			_ -> gen_tcp:send(Sock, list_to_binary("Invalid request: " ++ Req ++ "\n"))
+			"login" -> 
+				loginmanager:login(Sock, Args),
+				parse_requests (Sock);
+			"logout" -> 
+				loginmanager:logout(Sock, Args),
+				parse_requests (Sock);
+			"create_account" -> 
+				loginmanager:create_account(Sock, Args),
+				parse_requests (Sock);
+			"close_account" -> 
+				loginmanager:close_account(Sock, Args),
+				parse_requests (Sock);
+			"online" -> 
+				loginmanager:online(Sock),
+				parse_requests (Sock);
+			"close" -> gen_tcp:close(Sock);
+			_ -> 
+				gen_tcp:send(Sock, list_to_binary("Invalid request: " ++ Req ++ "\n")),
+				parse_requests (Sock)
 		end
-	end,
-	parse_requests (Sock).
-
-
+	end.
