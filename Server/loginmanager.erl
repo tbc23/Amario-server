@@ -1,5 +1,15 @@
 -module(loginmanager).
--export([start/0, stop/1, create_account/2, close_account/2, login/2, logout/2, online/1, loop/1]).
+-export([start/0, stop/1, create_account/2, close_account/2, login/2, logout/2, online/1, loop/1, leaderboard/1, take/2]).
+
+take ([Elem | Elems], N) ->
+	case N of
+		0 -> [];
+		_ -> 
+			case Elems of 
+				[] -> Elem;
+				_ -> [Elem | take(Elems, N-1)]
+			end
+	end.
 
 start () -> register(?MODULE, spawn(fun() -> loop(dict:new()) end)).
 
@@ -34,6 +44,7 @@ logout (Sock, Args) ->
 	io:format("Req: Logout | User: ~p | Pass: ~p~n", [User, Pass]),
 	server_call (Sock, {logout, User, Pass}).
 
+leaderboard (Sock) -> server_call (Sock, leaderboard).
 online (Sock) -> server_call (Sock, online).
 stop (Sock) -> server_call (Sock, stop).
 
@@ -43,7 +54,7 @@ loop (Users) ->
 			case dict:find(User, Users) of
 				error -> 
 					From ! {ok, ?MODULE},
-					loop (dict:store(User, {Pass, false}, Users));
+					loop (dict:store(User, {Pass, false, 0}, Users));
 				_ ->
 					From ! {user_exists, ?MODULE},
 					loop (Users)
@@ -53,7 +64,7 @@ loop (Users) ->
 				error -> 
 					From ! {user_not_found, ?MODULE},
 					loop (Users);
-				{ok, {Pass, _}} -> 
+				{ok, {Pass, _, _}} -> 
 					From ! {ok, ?MODULE},
 					loop (dict:erase(User, Users));
 				_ -> 
@@ -65,9 +76,9 @@ loop (Users) ->
 				error -> 
 					From ! {user_not_found, ?MODULE},
 					loop (Users);
-				{ok, {Pass, _}} ->
+				{ok, {Pass, _, HScore}} ->
 					From ! {ok, ?MODULE},
-					loop (dict:store(User, {Pass, true}, Users));
+					loop (dict:store(User, {Pass, true, HScore}, Users));
 				_ -> 
 					From ! {wrong_authentication, ?MODULE},
 					loop (Users)
@@ -77,15 +88,21 @@ loop (Users) ->
 				error -> 
 					From ! {user_not_found, ?MODULE},
 					loop (Users);
-				{ok, {Pass, _}} ->
+				{ok, {Pass, _, HScore}} ->
 					From ! {ok, ?MODULE},
-					loop (dict:store(User, {Pass, false}, Users));
+					loop (dict:store(User, {Pass, false, HScore}, Users));
 				_ -> 
 					From ! {wrong_authentication, ?MODULE},
 					loop (Users)
 			end;
 		{online, From} ->
-			From ! {[User || {User, {_, true}} <- dict:to_list(Users)], ?MODULE},
+			From ! {[User ++ " " || {User, {_, true, _}} <- dict:to_list(Users)], ?MODULE},
+			loop (Users);
+		{leaderboard, From} ->
+			F = fun({_, A2}, {_, B2}) -> A2 =< B2 end,
+			L = [{User, Score} || {User, {_, _, Score}} <- dict:to_list(Users)],
+			Board = take(lists:sort(F, L), 10),
+			From ! {Board, ?MODULE},
 			loop (Users);
 		{stop, From} -> From ! {ok, ?MODULE}
 	end.

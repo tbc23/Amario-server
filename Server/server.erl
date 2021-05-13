@@ -37,6 +37,9 @@ parse_requests (Sock) ->
 			"online" -> 
 				loginmanager:online(Sock),
 				parse_requests (Sock);
+			"leaderboard" -> 
+				loginmanager:leaderboard (Sock),
+				parse_requests (Sock);
 			"close" -> gen_tcp:close(Sock);
 			_ -> 
 				gen_tcp:send(Sock, list_to_binary("Invalid request: " ++ Req ++ "\n")),
