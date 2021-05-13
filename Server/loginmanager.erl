@@ -1,15 +1,5 @@
 -module(loginmanager).
--export([start/0, stop/1, create_account/2, close_account/2, login/2, logout/2, online/1, loop/1, leaderboard/1, take/2]).
-
-take ([Elem | Elems], N) ->
-	case N of
-		0 -> [];
-		_ -> 
-			case Elems of 
-				[] -> Elem;
-				_ -> [Elem | take(Elems, N-1)]
-			end
-	end.
+-export([start/0, stop/1, create_account/2, close_account/2, login/2, logout/2, online/1, loop/1, leaderboard/1]).
 
 start () -> register(?MODULE, spawn(fun() -> loop(dict:new()) end)).
 
@@ -101,8 +91,9 @@ loop (Users) ->
 		{leaderboard, From} ->
 			F = fun({_, A2}, {_, B2}) -> A2 =< B2 end,
 			L = [{User, Score} || {User, {_, _, Score}} <- dict:to_list(Users)],
-			Board = take(lists:sort(F, L), 10),
-			From ! {Board, ?MODULE},
+			{Board, _} = lists:split(min(10, length(L)), lists:sort(F, L)),
+			StrBoard = ["(" ++ User ++ "," ++ integer_to_list(Score) ++ ") " || {User, Score} <- Board],
+			From ! {StrBoard, ?MODULE},
 			loop (Users);
 		{stop, From} -> From ! {ok, ?MODULE}
 	end.
