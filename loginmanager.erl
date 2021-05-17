@@ -17,7 +17,7 @@ acceptor (LSock) ->
 	parse_requests (Sock).
 
 parse_requests (Sock) ->
-	gen_tcp:send(Sock, list_to_binary("Waiting for request:\n")),
+	%gen_tcp:send(Sock, list_to_binary("Waiting for request:\n")),
 	receive {tcp, _, BinMsg} ->
 		Msg = string:replace(binary_to_list(BinMsg), "\n", ""),
 		[Req | Args] = string:split(string:replace(Msg, ":", ""), " ", all),
