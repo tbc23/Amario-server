@@ -17,34 +17,36 @@ acceptor (LSock) ->
 	parse_requests (Sock).
 
 parse_requests (Sock) ->
-	%gen_tcp:send(Sock, list_to_binary("Waiting for request:\n")),
-	receive {tcp, _, BinMsg} ->
-		Msg = string:replace(binary_to_list(BinMsg), "\n", ""),
-		[Req | Args] = string:split(string:replace(Msg, ":", ""), " ", all),
-		case Req of 
-			"login" -> 
-				login(Sock, Args),
-				parse_requests (Sock);
-			"logout" -> 
-				logout(Sock, Args),
-				parse_requests (Sock);
-			"create_account" -> 
-				create_account(Sock, Args),
-				parse_requests (Sock);
-			"close_account" -> 
-				close_account(Sock, Args),
-				parse_requests (Sock);
-			"online" -> 
-				online(Sock),
-				parse_requests (Sock);
-			"leaderboard" -> 
-				leaderboard (Sock),
-				parse_requests (Sock);
-			"close" -> gen_tcp:close(Sock);
-			_ -> 
-				gen_tcp:send(Sock, list_to_binary("Invalid request: " ++ Req ++ "\n")),
-				parse_requests (Sock)
-		end
+	receive 
+		{tcp, _, BinMsg} ->
+			Msg = string:replace(binary_to_list(BinMsg), "\n", ""),
+			[Req | Args] = string:split(string:replace(Msg, ":", ""), " ", all),
+			case Req of 
+				"login" -> 
+					login(Sock, Args),
+					parse_requests (Sock);
+				"logout" -> 
+					logout(Sock, Args),
+					parse_requests (Sock);
+				"create_account" -> 
+					create_account(Sock, Args),
+					parse_requests (Sock);
+				"close_account" -> 
+					close_account(Sock, Args),
+					parse_requests (Sock);
+				"online" -> 
+					online(Sock),
+					parse_requests (Sock);
+				"leaderboard" -> 
+					leaderboard (Sock),
+					parse_requests (Sock);
+				"close" -> gen_tcp:close(Sock);
+				_ -> 
+					gen_tcp:send(Sock, list_to_binary("Invalid request: " ++ Req ++ "\n")),
+					parse_requests (Sock)
+			end;
+		{tcp_closed, _} -> gen_tcp:close(Sock);
+		{tcp_error, _, _} -> gen_tcp:close(Sock)
 	end.
 
 startlm () -> register(?MODULE, spawn(fun() -> loop(dict:new()) end)).
