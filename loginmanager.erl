@@ -38,7 +38,7 @@ parse_requests (Sock) ->
 					online(Sock),
 					parse_requests (Sock);
 				"leaderboard" -> 
-					leaderboard (Sock),
+					leaderboard (Sock, Args),
 					parse_requests (Sock);
 				"close" -> gen_tcp:close(Sock);
 				_ -> 
@@ -78,7 +78,9 @@ logout (Sock, Args) ->
 	io:format("Req: Logout | User: ~p | Pass: ~p~n", [User, Pass]),
 	server_call (Sock, {logout, User, Pass}).
 
-leaderboard (Sock) -> server_call (Sock, leaderboard).
+leaderboard (Sock, Args) -> 
+	[Num] = Args,
+	server_call (Sock, {leaderboard, list_to_integer(Num)}).
 online (Sock) -> server_call (Sock, online).
 
 loop (Users) ->
@@ -131,10 +133,10 @@ loop (Users) ->
 		{online, From} ->
 			From ! {[User ++ " " || {User, {_, true, _}} <- dict:to_list(Users)], ?MODULE},
 			loop (Users);
-		{leaderboard, From} ->
+		{{leaderboard, Num}, From} ->
 			F = fun({_, A2}, {_, B2}) -> A2 =< B2 end,
 			L = [{User, Score} || {User, {_, _, Score}} <- dict:to_list(Users)],
-			{Board, _} = lists:split(min(10, length(L)), lists:sort(F, L)),
+			{Board, _} = lists:split(min(Num, length(L)), lists:sort(F, L)),
 			StrBoard = ["(" ++ User ++ "," ++ integer_to_list(Score) ++ ") " || {User, Score} <- Board],
 			From ! {StrBoard, ?MODULE},
 			loop (Users);
