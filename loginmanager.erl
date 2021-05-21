@@ -40,6 +40,9 @@ parse_requests (Sock) ->
 				"leaderboard" -> 
 					leaderboard (Sock, Args),
 					parse_requests (Sock);
+				"check" ->
+					check_user (Sock, Args),
+					parse_requests (Sock);
 				"close" -> gen_tcp:close(Sock);
 				_ -> 
 					gen_tcp:send(Sock, list_to_binary("Invalid request: " ++ Req ++ "\n")),
@@ -81,7 +84,12 @@ logout (Sock, Args) ->
 leaderboard (Sock, Args) -> 
 	[Num] = Args,
 	server_call (Sock, {leaderboard, list_to_integer(Num)}).
+
 online (Sock) -> server_call (Sock, online).
+
+check_user (Sock, Args) ->
+	[User, Pass] = Args,
+	server_call (Sock, {check, User, Pass}).
 
 loop (Users) ->
 	receive 
@@ -140,5 +148,17 @@ loop (Users) ->
 			StrBoard = [User ++ " " ++ integer_to_list(Score) ++ "," || {User, Score} <- Board],
 			From ! {StrBoard, ?MODULE},
 			loop (Users);
+		{{check, User, Pass}, From} ->
+			case dict:find(User, Users) of
+				error ->
+					From ! {user_not_found, ?MODULE},
+					loop(Users);
+				{ok, {Pass, _, _}} -> 
+					From ! {ok, ?MODULE},
+					loop (Users);
+				_ -> 
+					From ! {wrong_authentication, ?MODULE},
+					loop (Users)
+			end;
 		{stop, From} -> From ! {ok, ?MODULE}
 	end.
