@@ -1,10 +1,9 @@
 -module(loginmanager).
 -export([start/1, stop/1, parse_requests/1]).
 
-start (Port) -> spawn(fun() -> lobby(Port) end).
 stop (Server) -> Server ! stop.
 
-lobby (Port) ->
+start (Port) ->
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
 	spawn(fun() -> startlm() end),
 	spawn(fun() -> acceptor(LSock) end),
@@ -131,9 +130,12 @@ loop (Users) ->
 				error -> 
 					From ! {user_not_found, ?MODULE},
 					loop (Users);
-				{ok, {Pass, _, HScore}} ->
+				{ok, {Pass, true, HScore}} ->
 					From ! {ok, ?MODULE},
 					loop (dict:store(User, {Pass, false, HScore}, Users));
+				{ok, {Pass, false, _}} ->
+					From ! {user_not_online, ?MODULE},
+					loop (Users);
 				_ -> 
 					From ! {wrong_authentication, ?MODULE},
 					loop (Users)
