@@ -5,6 +5,7 @@ stop (Server) -> Server ! stop.
 
 start (Port) ->
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
+	io:format("LMSocket: ~p~n", [LSock]),
 	spawn(fun() -> startlm() end),
 	spawn(fun() -> acceptor(LSock) end),
 	receive stop -> ok end.
@@ -18,7 +19,8 @@ acceptor (LSock) ->
 parse_requests (Sock) ->
 	receive 
 		{tcp, _, BinMsg} ->
-			Msg = string:replace(binary_to_list(BinMsg), "\n", ""),
+			MsgAux = string:replace(binary_to_list(BinMsg), "\n", ""),
+			Msg = string:replace(MsgAux, "\r", ""),
 			[Req | Args] = string:split(string:replace(Msg, ":", ""), " ", all),
 			case Req of 
 				"login" -> 
@@ -51,11 +53,11 @@ parse_requests (Sock) ->
 		{tcp_error, _, _} -> gen_tcp:close(Sock)
 	end.
 
-startlm () -> register(?MODULE, spawn(fun() -> loop(dict:new()) end)).
+startlm () -> register(loginmanager, spawn(fun() -> loop(dict:new()) end)).
 
 server_call (Sock, Request) ->
-	?MODULE ! {Request, self()},
-	receive {Res, ?MODULE} -> 
+	loginmanager ! {Request, self()},
+	receive {Res, loginmanager} -> 
 		case is_atom(Res) of 
 			true -> R = atom_to_list(Res);
 			false -> R = Res
@@ -95,72 +97,72 @@ loop (Users) ->
 		{{create_account, User, Pass}, From} ->
 			case dict:find(User, Users) of
 				error -> 
-					From ! {ok, ?MODULE},
+					From ! {ok, loginmanager},
 					loop (dict:store(User, {Pass, false, 0}, Users));
 				_ ->
-					From ! {user_exists, ?MODULE},
+					From ! {user_exists, loginmanager},
 					loop (Users)
 			end;
 		{{close_account, User, Pass}, From} ->
 			case dict:find(User, Users) of
 				error -> 
-					From ! {user_not_found, ?MODULE},
+					From ! {user_not_found, loginmanager},
 					loop (Users);
 				{ok, {Pass, _, _}} -> 
-					From ! {ok, ?MODULE},
+					From ! {ok, loginmanager},
 					loop (dict:erase(User, Users));
 				_ -> 
-					From ! {wrong_authentication, ?MODULE},
+					From ! {wrong_authentication, loginmanager},
 					loop (Users)
 			end;
 		{{login, User, Pass}, From} ->
 			case dict:find(User, Users) of
 				error -> 
-					From ! {user_not_found, ?MODULE},
+					From ! {user_not_found, loginmanager},
 					loop (Users);
 				{ok, {Pass, _, HScore}} ->
-					From ! {ok, ?MODULE},
+					From ! {ok, loginmanager},
 					loop (dict:store(User, {Pass, true, HScore}, Users));
 				_ -> 
-					From ! {wrong_authentication, ?MODULE},
+					From ! {wrong_authentication, loginmanager},
 					loop (Users)
 			end;
 		{{logout, User, Pass}, From} ->
 			case dict:find(User, Users) of
 				error -> 
-					From ! {user_not_found, ?MODULE},
+					From ! {user_not_found, loginmanager},
 					loop (Users);
 				{ok, {Pass, true, HScore}} ->
-					From ! {ok, ?MODULE},
+					From ! {ok, loginmanager},
 					loop (dict:store(User, {Pass, false, HScore}, Users));
 				{ok, {Pass, false, _}} ->
-					From ! {user_not_online, ?MODULE},
+					From ! {user_not_online, loginmanager},
 					loop (Users);
 				_ -> 
-					From ! {wrong_authentication, ?MODULE},
+					From ! {wrong_authentication, loginmanager},
 					loop (Users)
 			end;
 		{online, From} ->
-			From ! {[User ++ " " || {User, {_, true, _}} <- dict:to_list(Users)], ?MODULE},
+			From ! {[User ++ " " || {User, {_, true, _}} <- dict:to_list(Users)], loginmanager},
 			loop (Users);
 		{{leaderboard, Num}, From} ->
 			F = fun({_, A2}, {_, B2}) -> A2 =< B2 end,
 			L = [{User, Score} || {User, {_, _, Score}} <- dict:to_list(Users)],
 			{Board, _} = lists:split(min(Num, length(L)), lists:sort(F, L)),
 			StrBoard = [User ++ " " ++ integer_to_list(Score) ++ "," || {User, Score} <- Board],
-			From ! {StrBoard, ?MODULE},
+			From ! {StrBoard, loginmanager},
 			loop (Users);
 		{{check, User, Pass}, gamemanager} ->
 			case dict:find(User, Users) of
 				error ->
-					gamemanager ! {user_not_found, ?MODULE},
+					gamemanager ! {user_not_found, loginmanager},
 					loop(Users);
 				{ok, {Pass, _, _}} -> 
-					gamemanager ! {ok, User, ?MODULE},
+					gamemanager ! {ok, User, loginmanager},
 					loop (Users);
 				_ -> 
-					gamemanager ! {wrong_authentication, ?MODULE},
+					gamemanager ! {wrong_authentication, loginmanager},
 					loop (Users)
 			end;
-		{stop, From} -> From ! {ok, ?MODULE}
+		{stop, From} -> From ! {ok, loginmanager}
 	end.

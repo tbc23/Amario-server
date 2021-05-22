@@ -2,11 +2,14 @@
 -export([start/1]).
 
 start (Port) ->
+	SPId = whereis(server),
 	LMPid = whereis(loginmanager),
 	io:format("Module: ~p~n", [LMPid]),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
-	register(?MODULE, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new()) end)),
-	spawn(fun() -> acceptor(LMPid, LSock) end).
+	io:format("GMSocket: ~p~n", [LSock]),
+	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new()) end)),
+	spawn(fun() -> acceptor(LMPid, LSock) end),
+	receive stop -> ok end.
 
 acceptor (LMPid, LSock) ->
 	{ok, Sock} = gen_tcp:accept(LSock),
@@ -23,7 +26,7 @@ parse_requests (LMPid, Sock) ->
 			case Req of
 				"check" ->
 					[User, Pass] = Args,
-					LMPid ! {{check, User, Pass}, ?MODULE},
+					LMPid ! {{check, User, Pass}, gamemanager},
 					parse_requests (LMPid, Sock)
 			end;
 		{tcp_closed, _} -> gen_tcp:close(Sock);
@@ -42,8 +45,9 @@ add_user(LMPid, Users, Creatures, Obstacles) ->
 			Accel = dict:store("a", {0,0} , Player),
 			Vel = dict:store("v", {0.2, 0.2}, Accel),
 			Pos = dict:store("pos", {rand:uniform(),rand:uniform()}, Vel),
-			Size = dict:store("size", 0.1, Pos),
-			Score = dict:store("score", 0, Size),
+			SizeDict = dict:store("size", 0.1, Pos),
+			Score = dict:store("score", 0, SizeDict),
+			io:format("USER ADDED~n"),
 			game(LMPid, dict:store(dict:size(Users),Score, Users), Creatures, Obstacles);
 		{ok, _, loginmanager} ->
 			LMPid ! {game_full, loginmanager};
