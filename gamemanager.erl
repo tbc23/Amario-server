@@ -34,8 +34,15 @@ parse_requests (LMPid, Sock) ->
 	end.
 
 game (LMPid, Users, Creatures, Obstacles) ->
-	add_user(LMPid, Users, Creatures, Obstacles).
+	add_user(LMPid, Users, Creatures, Obstacles)
+%	{UpUsers, UpCreatures} = update_step(Users, Creatures)
+%	game(LMPid, UpUsers, UpCreatures, Obstacles).
+	.
 
+%update_step(Users, Creatures) ->
+%	UpUsers = dict:new(),
+%	UpCreatures = dict:new(),
+%	[dict:store(K, updateUser(U), UpUsers) || {K, U} <- dict:to_list(Users)]
 
 add_user(LMPid, Users, Creatures, Obstacles) ->
 	Size = dict:size(Users), 
