@@ -152,16 +152,16 @@ loop (Users) ->
 			StrBoard = [User ++ " " ++ integer_to_list(Score) ++ "," || {User, Score} <- Board],
 			From ! {StrBoard, loginmanager},
 			loop (Users);
-		{{check, User, Pass}, gamemanager} ->
+		{{check, User, Pass}, Sock, gamemanager} ->
 			case dict:find(User, Users) of
 				error ->
-					gamemanager ! {user_not_found, loginmanager},
+					gamemanager ! {user_not_found, Sock, loginmanager},
 					loop(Users);
 				{ok, {Pass, _, _}} -> 
-					gamemanager ! {ok, User, loginmanager},
+					gamemanager ! {ok, User, Sock, loginmanager},
 					loop (Users);
 				_ -> 
-					gamemanager ! {wrong_authentication, loginmanager},
+					gamemanager ! {wrong_authentication, Sock, loginmanager},
 					loop (Users)
 			end;
 		{stop, From} -> From ! {ok, loginmanager}
