@@ -2,6 +2,7 @@
 -export([start/1]).
 
 timeout() -> 0 .
+timenow() -> erlang:monotonic_time(millisecond) .
 minV() -> 0.1 .
 maxV() -> 0.3 .
 minW() -> 0 .
@@ -59,7 +60,7 @@ parse_requests (LMPid, Sock) ->
 game (LMPid, Users, Creatures, Obstacles, Time) ->
 	NewUsers = user_handler(Users),
 	NewTime = timenow(),
-	TimeStep = NewTime - Time,
+	TimeStep = (NewTime - Time) * 1000,
 	%Sockets = [S || {S, _} <- dict:to_list(NewUsers)],
 	%io:format("Sockets: ~p~n", [Sockets]),
 	{UpUsers, UpCreatures} = update_step(NewUsers, Creatures, TimeStep),
@@ -68,9 +69,6 @@ game (LMPid, Users, Creatures, Obstacles, Time) ->
 	updateClient(UpUsers, UpCreatures),
 	game(LMPid, UpUsers, UpCreatures, Obstacles, NewTime).
 	
-timenow() ->
-	erlang:monotonic_time(seconds) .
-
 updateClient(Users, Creatures) ->
 	NumUsers = integer_to_list(dict:size(Users)),
 	NumCreatures = integer_to_list(dict:size(Creatures)),
