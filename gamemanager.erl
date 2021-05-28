@@ -1,19 +1,18 @@
 -module(gamemanager).
 -export([start/1]).
 
+timeout() -> 0 .
 minV() -> 0.1 .
 maxV() -> 0.3 .
 minW() -> 0 .
 maxW() -> 2 * math:pi() / 1 .
 getLinear() -> (maxV() - minV())/2 .
-getAng () -> (maxW() - minW())/2 .  
+getAng() -> (maxW() - minW())/2 .  
 
 start (Port) ->
 	%SPId = whereis(server),
 	LMPid = whereis(loginmanager),
-	io:format("Module: ~p~n", [LMPid]),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
-	io:format("GMSocket: ~p~n", [LSock]),
 	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new(), timenow()) end)),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
 	receive stop -> ok end.
@@ -21,7 +20,7 @@ start (Port) ->
 acceptor (LMPid, LSock) ->
 	{ok, Sock} = gen_tcp:accept(LSock),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
-	io:format("User entered game~n", []),
+	io:format("User entered game lobby~n", []),
 	parse_requests (LMPid, Sock).
 
 parse_requests (LMPid, Sock) ->
@@ -39,7 +38,7 @@ parse_requests (LMPid, Sock) ->
 					gamemanager ! {press, Key, Sock};
 				"release" ->
 					[Key] = Args,
-                    gamemanager ! {release, Key, Sock}
+          gamemanager ! {release, Key, Sock}
 			end,
 			parse_requests (LMPid, Sock);
 		{tcp_closed, _} ->
@@ -50,22 +49,23 @@ parse_requests (LMPid, Sock) ->
 			gen_tcp:closed(Sock)
 	end.
 
-ShowUsers ([]) -> done;
-ShowUsers ([User | Users]) -> 
-	UserList = dict:to_list(User),
-	[io:format("~p: ~p | ", [K, V]) || {K, V} <- UserList],
-	io:format("~n"),
-	ShowUsers(Users).
+%ShowUsers ([]) -> done;
+%ShowUsers ([User | Users]) -> 
+%	UserList = dict:to_list(User),
+%	[io:format("~p: ~p | ", [K, V]) || {K, V} <- UserList],
+%	io:format("~n"),
+%	ShowUsers(Users).
 
 game (LMPid, Users, Creatures, Obstacles, Time) ->
 	NewUsers = user_handler(Users),
-	UserList = [U || {K,U} <- dict:to_list(Users)],
-	ShowUsers(UserList),
 	NewTime = timenow(),
 	TimeStep = NewTime - Time,
+	%Sockets = [S || {S, _} <- dict:to_list(NewUsers)],
+	%io:format("Sockets: ~p~n", [Sockets]),
 	{UpUsers, UpCreatures} = update_step(NewUsers, Creatures, TimeStep),
+	%NewSockets = [S || {S, _} <- dict:to_list(UpUsers)],
+	%io:format("New Sockets: ~p~n", [NewSockets]),
 	updateClient(UpUsers, UpCreatures),
-	io:format()
 	game(LMPid, UpUsers, UpCreatures, Obstacles, NewTime).
 	
 timenow() ->
@@ -75,18 +75,18 @@ updateClient(Users, Creatures) ->
 	NumUsers = integer_to_list(dict:size(Users)),
 	NumCreatures = integer_to_list(dict:size(Creatures)),
 	Sockets = dict:fetch_keys(Users),
-	[gen_tcp:send(S, list_to_binary(NumUsers + " " + NumCreatures + "\n")) || S <- Sockets],
+	[gen_tcp:send(S, list_to_binary(NumUsers ++ " " ++ NumCreatures ++ "\n")) || S <- Sockets],
 	UserData = [U || {_, U} <- dict:to_list(Users)],
-	[sendCreatures(K, C, Sockets) || {K, C} <- dict:to_list(Creatures)],
-	sendUsers (UserData, Sockets).
+	sendUsers (UserData, Sockets),
+	[sendCreatures(K, C, Sockets) || {K, C} <- dict:to_list(Creatures)].
 
 sendUsers ([], _) -> done ;
 sendUsers ([User | Users], Sockets) ->
 	{X, Y} = dict:fetch("pos", User),
 	UD1 = dict:fetch("name", User),
-	UD2 = UD1 + " " + integer_to_list(X) + " " + integer_to_list(Y),
-	UD3 = UD2 + " " + float_to_list(dict:fetch("size", User)),
-	UD4 = UD3 + " " + integer_to_list(dict:fetch("score", User)) + "\n",
+	UD2 = UD1 ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
+	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("size", User)),
+	UD4 = UD3 ++ " " ++ integer_to_list(dict:fetch("score", User)) ++ "\n",
 	[gen_tcp:send(S, list_to_binary(UD4)) || S <- Sockets ],
 	sendUsers(Users, Sockets) .
 
@@ -95,10 +95,8 @@ sendCreatures(Color, [_ | Creatures], Sockets) ->
 	sendCreatures (Color, Creatures, Sockets).
 
 update_step(Users, Creatures, Time) ->
-	UpUsers = dict:new(),
-	UpCreatures = dict:new(),
-	[dict:store(K, updateUser(U, Time), UpUsers) || {K, U} <- dict:to_list(Users)],
-	[dict:store(K, updateCreature(U, Time), UpCreatures) || {K, U} <- dict:to_list(Creatures)],
+	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
+	UpCreatures = dict:from_list([{K, updateCreature(U, Time)} || {K, U} <- dict:to_list(Creatures)]),
 	{UpUsers, UpCreatures}.
 
 updateCreature (Creature, _) -> Creature .
@@ -179,5 +177,6 @@ user_handler(Users) ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
 			Result  = dict:store(Sock,dict:store("a",{Linear, 0}, User), Users)
+	after timeout() -> Result = Users 
 	end,
-	Result .	
+	Result .
