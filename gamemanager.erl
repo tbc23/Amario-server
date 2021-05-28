@@ -1,17 +1,20 @@
 -module(gamemanager).
 -export([start/1]).
 
-getAng () -> 10 .
-
-getLinear () -> 50 .
+minV() -> 0.1 .
+maxV() -> 0.3 .
+minW() -> 0 .
+maxW() -> 2 * math:pi() / 1 .
+getLinear() -> (maxV() - minV())/2 .
+getAng () -> (maxW() - minW())/2 .  
 
 start (Port) ->
-	SPId = whereis(server),
+	%SPId = whereis(server),
 	LMPid = whereis(loginmanager),
 	io:format("Module: ~p~n", [LMPid]),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
 	io:format("GMSocket: ~p~n", [LSock]),
-	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new()) end)),
+	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new(), timenow()) end)),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
 	receive stop -> ok end.
 
@@ -30,13 +33,13 @@ parse_requests (LMPid, Sock) ->
 			case Req of
 				"check" ->
 					[User, Pass] = Args,
-					LMPid ! {{check, User, Pass}, Sock, gamemanager},
+					LMPid ! {{check, User, Pass}, Sock, gamemanager};
 				"press" -> 
 					[Key] = Args,
-					gamemanager ! {press, Key, Sock},
+					gamemanager ! {press, Key, Sock};
 				"release" ->
 					[Key] = Args,
-                    gamemanager ! {release, Key, Sock},
+                    gamemanager ! {release, Key, Sock}
 			end,
 			parse_requests (LMPid, Sock);
 		{tcp_closed, _} ->
@@ -47,76 +50,134 @@ parse_requests (LMPid, Sock) ->
 			gen_tcp:closed(Sock)
 	end.
 
+ShowUsers ([]) -> done;
+ShowUsers ([User | Users]) -> 
+	UserList = dict:to_list(User),
+	[io:format("~p: ~p | ", [K, V]) || {K, V} <- UserList],
+	io:format("~n"),
+	ShowUsers(Users).
+
 game (LMPid, Users, Creatures, Obstacles, Time) ->
-	user_handler(LMPid, Users, Creatures, Obstacles)
-	{UpUsers, UpCreatures} = update_step(Users, Creatures)
-%	game(LMPid, UpUsers, UpCreatures, Obstacles).
-	.
+	NewUsers = user_handler(Users),
+	UserList = [U || {K,U} <- dict:to_list(Users)],
+	ShowUsers(UserList),
+	NewTime = timenow(),
+	TimeStep = NewTime - Time,
+	{UpUsers, UpCreatures} = update_step(NewUsers, Creatures, TimeStep),
+	updateClient(UpUsers, UpCreatures),
+	io:format()
+	game(LMPid, UpUsers, UpCreatures, Obstacles, NewTime).
+	
+timenow() ->
+	erlang:monotonic_time(seconds) .
+
+updateClient(Users, Creatures) ->
+	NumUsers = integer_to_list(dict:size(Users)),
+	NumCreatures = integer_to_list(dict:size(Creatures)),
+	Sockets = dict:fetch_keys(Users),
+	[gen_tcp:send(S, list_to_binary(NumUsers + " " + NumCreatures + "\n")) || S <- Sockets],
+	UserData = [U || {_, U} <- dict:to_list(Users)],
+	[sendCreatures(K, C, Sockets) || {K, C} <- dict:to_list(Creatures)],
+	sendUsers (UserData, Sockets).
+
+sendUsers ([], _) -> done ;
+sendUsers ([User | Users], Sockets) ->
+	{X, Y} = dict:fetch("pos", User),
+	UD1 = dict:fetch("name", User),
+	UD2 = UD1 + " " + integer_to_list(X) + " " + integer_to_list(Y),
+	UD3 = UD2 + " " + float_to_list(dict:fetch("size", User)),
+	UD4 = UD3 + " " + integer_to_list(dict:fetch("score", User)) + "\n",
+	[gen_tcp:send(S, list_to_binary(UD4)) || S <- Sockets ],
+	sendUsers(Users, Sockets) .
+
+sendCreatures(_, [], _) -> done;
+sendCreatures(Color, [_ | Creatures], Sockets) ->
+	sendCreatures (Color, Creatures, Sockets).
 
 update_step(Users, Creatures, Time) ->
 	UpUsers = dict:new(),
 	UpCreatures = dict:new(),
-	[dict:store(K, updateUser(U, Time), UpUsers) || {K, U} <- dict:to_list(Users)]
+	[dict:store(K, updateUser(U, Time), UpUsers) || {K, U} <- dict:to_list(Users)],
+	[dict:store(K, updateCreature(U, Time), UpCreatures) || {K, U} <- dict:to_list(Creatures)],
+	{UpUsers, UpCreatures}.
+
+updateCreature (Creature, _) -> Creature .
 
 updateUser(User, Time) ->
 	{Linear, Ang} = dict:fetch("a", User),
-	{V, Theta} = dict:fetch("v", User),
+	{V, W} = dict:fetch("v", User),
 	{X, Y} = dict:fetch("pos", User),
-	Up1 = dict:store("v", {V + Linear * Time, Theta + 0.5 * Ang * Time * Time}, User),
-	Up2 = dict:store("pos", {X + V * Time * math:cos(Theta), Y + V * Time * math:sin(Theta)}, Up1),
-	Up2 .
+	Theta = dict:fetch("theta", User),
+	NewV = V + Linear * Time,
+	NewW = W + Ang * Time,
+	{Type, UpV} = threshold(NewV, minV(), maxV()),
+	{_, UpW} = threshold(NewW, minW(), maxW()),
+	case Type of 
+		min -> Up = dict:store("a", {0, Ang}, User);
+		_ -> Up = User
+	end,
+	NewT = Theta + W * Time,
+	NewX = X + V * math:cos(Theta) * Time,
+	NewY = Y + V * math:sin(Theta) * Time,
+	Up1 = dict:store("v", {UpV,UpW}, Up),
+	Up2 = dict:store("pos", {NewX, NewY}, Up1),
+	Up3 = dict:store("theta", NewT, Up2),
+	Up3 .
 
-	
-user_handler(LMPid, Users, Creatures, Obstacles) ->
+threshold(Value, Min, Max) ->
+		if 
+			Value < Min -> {min, Min};
+			Value > Max -> {max, Max};
+			true -> {none, Value}
+		end.
+
+user_handler(Users) ->
 	Size = dict:size(Users), 
 	receive
 		{ok, User, Sock, loginmanager} when Size < 3 ->
 			Player = dict:store("name", User, dict:new()),
 			Accel = dict:store("a", {0,0} , Player),
-			Vel = dict:store("v", {0.2, 0.2}, Accel),
+			Vel = dict:store("v", {minV(), minW()}, Accel),
 			Pos = dict:store("pos", {rand:uniform(),rand:uniform()}, Vel),
 			SizeDict = dict:store("size", 0.1, Pos),
-			Score = dict:store("score", 0, SizeDict),
+			Orientation = dict:store("theta", 0, SizeDict),
+			NewUser = dict:store("score", 0, Orientation),
+			Result = dict:store(Sock, NewUser, Users),
 			io:format("USER ADDED~n"),
-			gen_tcp:send(Sock, list_to_binary("user added\n")),
-			game(LMPid, dict:store(Sock, Score, Users), Creatures, Obstacles);
+			gen_tcp:send(Sock, list_to_binary("user added\n"));
 		{ok, _, Sock, loginmanager} -> 
 			gen_tcp:send(Sock, list_to_binary("game full\n")),
-			game(LMPid, Users, Creatures, Obstacles);	
+			Result = Users;
 		{_, Sock, loginmanager} ->
 			gen_tcp:send(Sock, list_to_binary("wrong authentication\n")),
-			game(LMPid, Users, Creatures, Obstacles);
+			Result = Users;
 		{user_left, Sock} ->
 			case dict:is_key(Sock, Users) of
 				true ->
 					io:format("User removed~n"),
-					game(LMPid, dict:erase(Sock, Users), Creatures, Obstacles);
+					Result = dict:erase(Sock, Users);
 				_ ->
-					game(LMPid, Users, Creatures, Obstacles)
+					Result = Users
 			end;
 		{press, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
-			UpUsers = dict:store(Sock,dict:store("a",{getLinear(), Ang}, User), Users),
-			game(LMPid, UpUsers, Creatures, Obstacles);
+			Result = dict:store(Sock,dict:store("a",{getLinear(), Ang}, User), Users);
 		{press, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
-			UpUsers = dict:store(Sock,dict:store("a",{Linear, getAng()}, User), Users),
-			game(LMPid, UpUsers, Creatures, Obstacles);
+			Result = dict:store(Sock,dict:store("a",{Linear, getAng()}, User), Users);
 		{press, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
-			UpUsers = dict:store(Sock,dict:store("a",{Linear, -getAng()}, User), Users),
-			game(LMPid, UpUsers, Creatures, Obstacles);
+			Result = dict:store(Sock,dict:store("a",{Linear, -getAng()}, User), Users);
 		{release, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
-			UpUsers = dict:store(Sock,dict:store("a",{-getLinear(), Ang}, User), Users),
-			game(LMPid, UpUsers, Creatures, Obstacles);
+			Result = dict:store(Sock,dict:store("a",{-getLinear(), Ang}, User), Users);
 		{release, _, Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
-			UpUsers = dict:store(Sock,dict:store("a",{Linear, 0}, User), Users),
-			game(LMPid, UpUsers, Creatures, Obstacles)
-	end.	
+			Result  = dict:store(Sock,dict:store("a",{Linear, 0}, User), Users)
+	end,
+	Result .	
