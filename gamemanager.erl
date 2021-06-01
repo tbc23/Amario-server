@@ -60,7 +60,8 @@ parse_requests (LMPid, Sock) ->
 game (LMPid, Users, Creatures, Obstacles, Time) ->
 	NewUsers = user_handler(Users),
 	NewTime = timenow(),
-	TimeStep = (NewTime - Time) * 1000,
+	TimeStep = (NewTime - Time) / 1000,
+%	io:format("TimeStep: ~p~n", [TimeStep]),
 	%Sockets = [S || {S, _} <- dict:to_list(NewUsers)],
 	%io:format("Sockets: ~p~n", [Sockets]),
 	{UpUsers, UpCreatures} = update_step(NewUsers, Creatures, TimeStep),
@@ -151,7 +152,10 @@ user_handler(Users) ->
 			case dict:is_key(Sock, Users) of
 				true ->
 					io:format("User removed~n"),
-					Result = dict:erase(Sock, Users);
+					User = dict:fetch(Sock, Users),
+					Name = dict:fetch("name", User),
+					Result = dict:erase(Sock, Users),
+					[gen_tcp:send(S, list_to_binary(Name ++ " left\n")) || {S, _} <- dict:to_list(Users)];
 				_ ->
 					Result = Users
 			end;
@@ -174,7 +178,9 @@ user_handler(Users) ->
 		{release, _, Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
-			Result  = dict:store(Sock,dict:store("a",{Linear, 0}, User), Users)
+			{V, _} = dict:fetch("v", User),
+			NewUser = dict:store("v", {V, 0}, User),
+			Result  = dict:store(Sock,dict:store("a",{Linear, 0}, NewUser), Users)
 	after timeout() -> Result = Users 
 	end,
 	Result .
