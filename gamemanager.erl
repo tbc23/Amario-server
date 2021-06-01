@@ -50,25 +50,14 @@ parse_requests (LMPid, Sock) ->
 			gen_tcp:closed(Sock)
 	end.
 
-%ShowUsers ([]) -> done;
-%ShowUsers ([User | Users]) -> 
-%	UserList = dict:to_list(User),
-%	[io:format("~p: ~p | ", [K, V]) || {K, V} <- UserList],
-%	io:format("~n"),
-%	ShowUsers(Users).
-
 game (LMPid, Users, Creatures, Obstacles, Time) ->
 	NewUsers = user_handler(Users),
 	NewTime = timenow(),
 	TimeStep = (NewTime - Time) / 1000,
-%	io:format("TimeStep: ~p~n", [TimeStep]),
-	%Sockets = [S || {S, _} <- dict:to_list(NewUsers)],
-	%io:format("Sockets: ~p~n", [Sockets]),
 	{UpUsers, UpCreatures} = update_step(NewUsers, Creatures, TimeStep),
-	%NewSockets = [S || {S, _} <- dict:to_list(UpUsers)],
-	%io:format("New Sockets: ~p~n", [NewSockets]),
-	updateClient(UpUsers, UpCreatures),
-	game(LMPid, UpUsers, UpCreatures, Obstacles, NewTime).
+	{ColUsers, ColCreatures} = collision_handler(UpUsers, UpCreatures),
+	updateClient(ColUsers, ColCreatures),
+	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime).
 	
 updateClient(Users, Creatures) ->
 	NumUsers = integer_to_list(dict:size(Users)),
@@ -92,6 +81,40 @@ sendUsers ([User | Users], Sockets) ->
 sendCreatures(_, [], _) -> done;
 sendCreatures(Color, [_ | Creatures], Sockets) ->
 	sendCreatures (Color, Creatures, Sockets).
+
+collision_handler(Users, Creatures) ->
+	NewUsers = dict:from_list([user_collision(U, Users, Creatures) || U <- dict:to_list(Users)]),
+	NewCreatures = dict:from_list([creature_collision(C, Users, Creatures) || C <- dict:to_list(Creatures)]),
+	{NewUsers, NewCreatures}.
+
+creature_collision (Creature, _, _) -> Creature.
+user_collision (User, _, _) -> 
+	NewUser = wall_collision (User),
+	NewUser.
+
+wall_collision (User) ->
+	{X, Y} = dict:fetch("pos", User),
+	{V, _} = dict:fetch("v", User),
+	Theta = dict:fetch("theta", User),
+	VX = V * math:cos(Theta),
+	VY = V * math:sin(Theta),
+	case (X > 1) or (X < 0) of
+		true -> {NVX, NVY} = {-VX, VY};
+		_ -> {NVX, NVY} = {VX, VY}
+	end,
+	case (Y > 1) or (Y < 0) of
+		true -> {NewVX, NewVY} = {NVX, -NVY};
+		_ -> {NewVX, NewVY} = {NVX, NVY}
+	end,
+	NewTheta = 
+		if 
+			(NewVY > 0) and (NewVX == 0) -> math:pi()/2;
+			(NewVY < 0) and (NewVX == 0) -> -math:pi()/2;
+			NewVX > 0 -> math:atan(NewVY/NewVX);
+			true -> -math:pi() - math:atan(NewVY/NewVX)
+		end,
+	NewUser = dict:store("theta", NewTheta, User),
+	NewUser.
 
 update_step(Users, Creatures, Time) ->
 	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
