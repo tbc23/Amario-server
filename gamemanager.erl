@@ -9,6 +9,7 @@ maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
 getLinear() -> (maxV() - minV())/2 .
 getAng() -> (maxW() - minW())/2 .  
+minSize () -> 0.025 .
 
 start (Port) ->
 	%SPId = whereis(server),
@@ -83,8 +84,8 @@ sendCreatures(Color, [_ | Creatures], Sockets) ->
 	sendCreatures (Color, Creatures, Sockets).
 
 collision_handler(Users, Creatures) ->
-	NewUsers = dict:from_list([user_collision(U, Users, Creatures) || U <- dict:to_list(Users)]),
-	NewCreatures = dict:from_list([creature_collision(C, Users, Creatures) || C <- dict:to_list(Creatures)]),
+	NewUsers = dict:from_list([{K, user_collision(U, Users, Creatures)}|| {K, U} <- dict:to_list(Users)]),
+	NewCreatures = dict:from_list([{K, creature_collision(C, Users, Creatures)} || {K, C} <- dict:to_list(Creatures)]),
 	{NewUsers, NewCreatures}.
 
 creature_collision (Creature, _, _) -> Creature.
@@ -94,24 +95,19 @@ user_collision (User, _, _) ->
 
 wall_collision (User) ->
 	{X, Y} = dict:fetch("pos", User),
-	{V, _} = dict:fetch("v", User),
+	Size = dict:fetch("size", User),
 	Theta = dict:fetch("theta", User),
-	VX = V * math:cos(Theta),
-	VY = V * math:sin(Theta),
-	case (X > 1) or (X < 0) of
-		true -> {NVX, NVY} = {-VX, VY};
-		_ -> {NVX, NVY} = {VX, VY}
-	end,
-	case (Y > 1) or (Y < 0) of
-		true -> {NewVX, NewVY} = {NVX, -NVY};
-		_ -> {NewVX, NewVY} = {NVX, NVY}
-	end,
-	NewTheta = 
+	COS = math:cos(Theta),
+	SIN = math:sin(Theta),
+	CL = (X - Size < 0) and (math:cos(Theta) < 0),
+	CR = (X + Size > 1) and (math:cos(Theta) > 0),
+	CD = (Y + Size > 1) and (math:sin(Theta) > 0),
+	CU = (Y - Size < 0) and (math:sin(Theta) < 0),
+	NewTheta =
 		if 
-			(NewVY > 0) and (NewVX == 0) -> math:pi()/2;
-			(NewVY < 0) and (NewVX == 0) -> -math:pi()/2;
-			NewVX > 0 -> math:atan(NewVY/NewVX);
-			true -> -math:pi() - math:atan(NewVY/NewVX)
+			(CU or CD) -> - Theta;
+			(CL or CR) -> math:pi() - Theta;
+		   	true -> Theta	
 		end,
 	NewUser = dict:store("theta", NewTheta, User),
 	NewUser.
@@ -159,7 +155,7 @@ user_handler(Users) ->
 			Accel = dict:store("a", {0,0} , Player),
 			Vel = dict:store("v", {minV(), 0}, Accel),
 			Pos = dict:store("pos", {rand:uniform(),rand:uniform()}, Vel),
-			SizeDict = dict:store("size", 0.1, Pos),
+			SizeDict = dict:store("size", minSize(), Pos),
 			Orientation = dict:store("theta", 0, SizeDict),
 			NewUser = dict:store("score", 0, Orientation),
 			Result = dict:store(Sock, NewUser, Users),
