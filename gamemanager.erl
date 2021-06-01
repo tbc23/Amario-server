@@ -5,8 +5,8 @@ timeout() -> 0 .
 timenow() -> erlang:monotonic_time(millisecond) .
 minV() -> 0.1 .
 maxV() -> 0.3 .
-minW() -> 0 .
 maxW() -> 2 * math:pi() / 1 .
+minW() -> -maxW() .
 getLinear() -> (maxV() - minV())/2 .
 getAng() -> (maxW() - minW())/2 .  
 
@@ -134,7 +134,7 @@ user_handler(Users) ->
 		{ok, User, Sock, loginmanager} when Size < 3 ->
 			Player = dict:store("name", User, dict:new()),
 			Accel = dict:store("a", {0,0} , Player),
-			Vel = dict:store("v", {minV(), minW()}, Accel),
+			Vel = dict:store("v", {minV(), 0}, Accel),
 			Pos = dict:store("pos", {rand:uniform(),rand:uniform()}, Vel),
 			SizeDict = dict:store("size", 0.1, Pos),
 			Orientation = dict:store("theta", 0, SizeDict),
@@ -166,11 +166,11 @@ user_handler(Users) ->
 		{press, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, getAng()}, User), Users);
+			Result = dict:store(Sock,dict:store("a",{Linear, -getAng()}, User), Users);
 		{press, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, _} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, -getAng()}, User), Users);
+			Result = dict:store(Sock,dict:store("a",{Linear, getAng()}, User), Users);
 		{release, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
