@@ -2,8 +2,10 @@
 -export([start/1]).
 
 timeout() -> 0 .
+spawn_time() -> 5 .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
+creatureV() -> minV() * 2 .
 minV() -> 0.1 .
 maxV() -> 1 .
 maxW() -> 2 * math:pi() / 1 .
@@ -11,12 +13,14 @@ minW() -> -maxW() .
 getLinear() -> (maxV() - minV())/2 .
 getAng() -> (maxW() - minW())/2 .  
 minSize () -> 0.025 .
+creatureSize () -> minSize() / 2.
+maxCreatures() -> 10.
 
 start (Port) ->
 	%SPId = whereis(server),
 	LMPid = whereis(loginmanager),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
-	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new(), timenow()) end)),
+	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new(), timenow(), 0) end)),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
 	receive stop -> ok end.
 
@@ -52,38 +56,59 @@ parse_requests (LMPid, Sock) ->
 			gen_tcp:closed(Sock)
 	end.
 
-game (LMPid, Users, Creatures, Obstacles, Time) ->
+game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime) ->
 	NewUsers = user_handler(Users),
 	NewTime = timenow(),
 	TimeStep = (NewTime - Time) / 1000,
-	{UpUsers, UpCreatures} = update_step(NewUsers, Creatures, TimeStep),
+	{NewSpawnTime, SCreatures} = spawnCreatures(SpawnTime + TimeStep, Creatures),
+	{UpUsers, UpCreatures} = update_step(NewUsers, SCreatures, TimeStep),
 	{ColUsers, ColCreatures} = collision_handler(UpUsers, UpCreatures),
 	updateClient(ColUsers, ColCreatures),
-	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime).
+	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime, NewSpawnTime).
+
+spawnCreatures(SpawnTime, Creatures) ->
+	NumCreatures = dict:size(Creatures),
+	case (SpawnTime > spawn_time()) and (NumCreatures < maxCreatures()) of
+		true -> 
+			NewSpawnTime = 0,
+			C1 = dict:store("pos", {rand:uniform()*screenRatio(), rand:uniform()}, dict:new()),
+			C2 = dict:store("v", {creatureV(), 0}, C1),
+			C3 = dict:store("size", creatureSize(), C2),
+			C4 = dict:store("theta", 2*math:pi()*rand:uniform(), C3),
+			C5 = dict:store("a", {0, 0}, C4),
+			case rand:uniform() > 0.5 of
+				true -> Key = "green";
+				_ -> Key = "red"
+			end,
+			C6 = dict:store("color", Key, C5),
+			NewCreatures = dict:store(integer_to_list(timenow()), C6, Creatures);
+		_ -> {NewSpawnTime, NewCreatures} = {SpawnTime, Creatures}
+	end,
+	{NewSpawnTime, NewCreatures}.
 	
 updateClient(Users, Creatures) ->
 	NumUsers = integer_to_list(dict:size(Users)),
 	NumCreatures = integer_to_list(dict:size(Creatures)),
 	Sockets = dict:fetch_keys(Users),
 	[gen_tcp:send(S, list_to_binary(NumUsers ++ " " ++ NumCreatures ++ "\n")) || S <- Sockets],
-	UserData = [U || {_, U} <- dict:to_list(Users)],
-	sendUsers (UserData, Sockets),
-	[sendCreatures(K, C, Sockets) || {K, C} <- dict:to_list(Creatures)].
+	[sendUser (U, Sockets) || {_, U} <- dict:to_list(Users)],
+	[sendCreature(K, C, Sockets) || {K, C} <- dict:to_list(Creatures)].
 
-sendUsers ([], _) -> done ;
-sendUsers ([User | Users], Sockets) ->
+sendUser (User, Sockets) ->
 	{X, Y} = dict:fetch("pos", User),
 	UD1 = dict:fetch("name", User),
 	UD2 = UD1 ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
 	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("theta", User)), 
 	UD4 = UD3 ++ " " ++ float_to_list(dict:fetch("size", User)),
 	UD5 = UD4 ++ " " ++ integer_to_list(dict:fetch("score", User)) ++ "\n",
-	[gen_tcp:send(S, list_to_binary(UD5)) || S <- Sockets ],
-	sendUsers(Users, Sockets) .
+	[gen_tcp:send(S, list_to_binary(UD5)) || S <- Sockets ].
 
-sendCreatures(_, [], _) -> done;
-sendCreatures(Color, [_ | Creatures], Sockets) ->
-	sendCreatures (Color, Creatures, Sockets).
+sendCreature(Name, C, Sockets) ->
+	{X, Y} = dict:fetch("pos", C),
+	Color = dict:fetch("color", C),
+	UD1 = Name ++ " " ++ Color ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
+	UD2 = UD1 ++ " " ++ float_to_list(dict:fetch("size", C)) ++ "\n",
+	[gen_tcp:send(S, list_to_binary(UD2)) || S <- Sockets].
 
 collision_handler(Users, Creatures) ->
 	NewUsers = dict:from_list([{K, user_collision(U, Users, Creatures)}|| {K, U} <- dict:to_list(Users)]),
@@ -116,10 +141,10 @@ wall_collision (User) ->
 
 update_step(Users, Creatures, Time) ->
 	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
-	UpCreatures = dict:from_list([{K, updateCreature(U, Time)} || {K, U} <- dict:to_list(Creatures)]),
+	UpCreatures = dict:from_list([{K, updateCreature(C, Time)} || {K, C} <- dict:to_list(Creatures)]),
 	{UpUsers, UpCreatures}.
 
-updateCreature (Creature, _) -> Creature .
+updateCreature (C, Time) -> updateUser(C, Time). 
 
 updateUser(User, Time) ->
 	{Linear, Ang} = dict:fetch("a", User),
@@ -156,9 +181,9 @@ user_handler(Users) ->
 			Player = dict:store("name", User, dict:new()),
 			Accel = dict:store("a", {0,0} , Player),
 			Vel = dict:store("v", {minV(), 0}, Accel),
-			Pos = dict:store("pos", {rand:uniform(),rand:uniform()}, Vel),
+			Pos = dict:store("pos", {rand:uniform()*screenRatio(),rand:uniform()}, Vel),
 			SizeDict = dict:store("size", minSize(), Pos),
-			Orientation = dict:store("theta", 0, SizeDict),
+			Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
 			NewUser = dict:store("score", 0, Orientation),
 			Result = dict:store(Sock, NewUser, Users),
 			io:format("USER ADDED~n"),
