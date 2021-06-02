@@ -5,7 +5,7 @@ timeout() -> 0 .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
 minV() -> 0.1 .
-maxV() -> 0.3 .
+maxV() -> 1 .
 maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
 getLinear() -> (maxV() - minV())/2 .
@@ -186,22 +186,30 @@ user_handler(Users) ->
 			Result = dict:store(Sock,dict:store("a",{getLinear(), Ang}, User), Users);
 		{press, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
-			{Linear, _} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, -getAng()}, User), Users);
+			{Linear, Ang} = dict:fetch("a", User),
+			Result = dict:store(Sock,dict:store("a",{Linear, Ang-getAng()}, User), Users);
 		{press, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
-			{Linear, _} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, getAng()}, User), Users);
+			{Linear, Ang} = dict:fetch("a", User),
+			Result = dict:store(Sock,dict:store("a",{Linear, Ang+getAng()}, User), Users);
 		{release, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
 			Result = dict:store(Sock,dict:store("a",{-getLinear(), Ang}, User), Users);
-		{release, _, Sock} ->
+		{release, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
-			{Linear, _} = dict:fetch("a", User),
+			{Linear, Ang} = dict:fetch("a", User),
 			{V, _} = dict:fetch("v", User),
+			NewAng = Ang + getAng(),
 			NewUser = dict:store("v", {V, 0}, User),
-			Result  = dict:store(Sock,dict:store("a",{Linear, 0}, NewUser), Users)
+			Result = dict:store(Sock, dict:store("a", {Linear, NewAng}, NewUser), Users);
+		{release, "d", Sock} ->
+			User = dict:fetch(Sock, Users),
+			{Linear, Ang} = dict:fetch("a", User),
+			{V, _} = dict:fetch("v", User),
+			NewAng = Ang - getAng(),
+			NewUser = dict:store("v", {V, 0}, User),
+			Result  = dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users)
 	after timeout() -> Result = Users 
 	end,
 	Result .

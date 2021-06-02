@@ -1,2 +1,2 @@
 erlc loginmanager.erl gamemanager.erl server.erl
-erl -pa ebin -eval "server:start(23, 24)"
+erl -pa ebin -eval "server:start(80, 81)"
