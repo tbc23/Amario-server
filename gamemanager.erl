@@ -115,7 +115,9 @@ collision_handler(Users, Creatures) ->
 	NewCreatures = dict:from_list([{K, creature_collision(C, Users, Creatures)} || {K, C} <- dict:to_list(Creatures)]),
 	{NewUsers, NewCreatures}.
 
-creature_collision (Creature, _, _) -> Creature.
+creature_collision (Creature, _, _) -> 
+	NewCreature = wall_collision (Creature),
+	NewCreature.
 user_collision (User, _, _) -> 
 	NewUser = wall_collision (User),
 	NewUser.
