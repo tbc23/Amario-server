@@ -76,9 +76,10 @@ sendUsers ([User | Users], Sockets) ->
 	{X, Y} = dict:fetch("pos", User),
 	UD1 = dict:fetch("name", User),
 	UD2 = UD1 ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
-	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("size", User)),
-	UD4 = UD3 ++ " " ++ integer_to_list(dict:fetch("score", User)) ++ "\n",
-	[gen_tcp:send(S, list_to_binary(UD4)) || S <- Sockets ],
+	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("theta", User)), 
+	UD4 = UD3 ++ " " ++ float_to_list(dict:fetch("size", User)),
+	UD5 = UD4 ++ " " ++ integer_to_list(dict:fetch("score", User)) ++ "\n",
+	[gen_tcp:send(S, list_to_binary(UD5)) || S <- Sockets ],
 	sendUsers(Users, Sockets) .
 
 sendCreatures(_, [], _) -> done;
