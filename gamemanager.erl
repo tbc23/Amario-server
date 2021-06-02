@@ -4,7 +4,6 @@
 timeout() -> 0 .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
-sizeX (Size) -> Size / screenRatio().
 minV() -> 0.1 .
 maxV() -> 0.3 .
 maxW() -> 2 * math:pi() / 1 .
@@ -102,9 +101,8 @@ wall_collision (User) ->
 	Theta = dict:fetch("theta", User),
 	COS = math:cos(Theta),
 	SIN = math:sin(Theta),
-	SizeX = sizeX(Size),
-	CL = (X - SizeX < 0) and (COS < 0),
-	CR = (X + SizeX > 1) and (COS > 0),
+	CL = (X - Size < 0) and (COS < 0),
+	CR = (X + Size > screenRatio()) and (COS > 0),
 	CD = (Y + Size > 1) and (SIN > 0),
 	CU = (Y - Size < 0) and (SIN < 0),
 	NewTheta =
