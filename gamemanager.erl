@@ -1,4 +1,5 @@
 -module(gamemanager).
+-import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2])
 -export([start/1]).
 
 timeout() -> 0 .
@@ -115,9 +116,29 @@ collision_handler(Users, Creatures) ->
 	NewCreatures = dict:from_list([{K, creature_collision(C, Users, Creatures)} || {K, C} <- dict:to_list(Creatures)]),
 	{NewUsers, NewCreatures}.
 
-creature_collision (Creature, _, _) -> 
-	NewCreature = wall_collision (Creature),
+creature_collision (Creature, _, Creatures) -> 
+	NCreature = wall_collision (Creature),
+	CList = [C || {_, C} <- dict:to_list(Creatures)],
+	NewCreature = creature2creature(NCreature, CList),
 	NewCreature.
+
+creature2creature (C1, C2) ->
+	{VN1, W1} = dict:fetch("v", C1),
+	Theta1 = dict:fetch("theta", C1),
+	{VN2, W2} = dict:fetch("v", C2),
+	Theta2 = dict:fetch("theta", C2),
+	V1 = fromPolar(VN1, Theta1),
+	V2 = fromPolar(VN2, Theta2),
+	X1X2 = add(dict:fetch("pos", C1), mult(dict:fetch("pos", C2), -1)), 
+	X2X1 = mult(X1X2, -1),
+	VF1 = add(V1, mult(X1X2, dot(add(V2, mult(V1, -1))), X1X2 / (norm(X1X2)*norm(X1X2))),
+	VF2 = add(V2, mult(X2X1, dot(add(V1, mult(V2, -1))), X2X1 / (norm(X2X1)*norm(X2X1))),
+	{NewV1, NewTheta1} = toPolar(VF1),
+	{NewV2, NewTheta2} = toPolar(VF2),
+	NewC1 = dict:store("v", {NewV1, W1}, C1),
+	NewC2 = dict:store("v", {NewV2, W2}, C2),
+	{dict:store("theta", NewTheta1, C1), dict:store("theta", NewTheta2, C2)}.
+
 user_collision (User, _, _) -> 
 	NewUser = wall_collision (User),
 	NewUser.
