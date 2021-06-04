@@ -16,6 +16,7 @@ getAng() -> (maxW() - minW())/2 .
 minSize () -> 0.025 .
 creatureSize () -> minSize() / 2.
 maxCreatures() -> 10.
+epsilon () -> 0.0000001.
 
 getV (User) -> 
 	{V, _} = dict:fetch("v", User),
@@ -75,6 +76,11 @@ game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime) ->
 	{UpUsers, UpCreatures} = update_step(NewUsers, SCreatures, TimeStep),
 	{ColUsers, ColCreatures} = collision_handler(UpUsers, UpCreatures),
 	updateClient(ColUsers, ColCreatures),
+	FPS = 1 / (epsilon() + TimeStep),
+	case FPS < 60 of 
+		true -> io:format("~p~n",[FPS]);
+		_ -> FPS2 = 0
+	end,
 	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime, NewSpawnTime).
 
 spawnCreatures(SpawnTime, Creatures) ->
@@ -142,8 +148,10 @@ creature2creature ({K1,C1}, [{K2,C2} | Creatures], CreatureDict) ->
 			{V1,V2} = {getV(C1), getV(C2)}, 
 			V1V2 = add(V1, mult(V2, -1)),
 			V2V1 = mult(V1V2, -1),
-			VF1 = add(V1, mult(X1X2, dot(V2V1, X1X2 / (Norm*Norm)))),
-			VF2 = add(V2, mult(X2X1, dot(V1V2, X2X1 / (Norm*Norm)))),
+			%io:format("V1V2:~p | V2V1:~p | X1X2:~p | Norm:~p~n", [V1V2,V2V1,X1X2,Norm]),
+			Dot = dot(V2V1, mult(X1X2, 1 / (Norm*Norm + epsilon()))),
+			VF1 = add(V1, mult(X1X2, Dot)),
+			VF2 = add(V2, mult(X2X1, Dot)), 
 			NCreatureDict = dict:store(K1, putV(VF1, C1), CreatureDict),
 			NewCreatureDict = dict:store(K2, putV(VF2, C2), NCreatureDict);
 		_ -> NewCreatureDict = CreatureDict
