@@ -11,12 +11,15 @@ minV() -> 0.1 .
 maxV() -> 1 .
 maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
-getLinear() -> (maxV() - minV())/2 .
-getAng() -> (maxW() - minW())/2 .  
-minSize () -> 0.025 .
-creatureSize () -> minSize() / 2.
+minLinear() -> (maxV() - minV())/2 .
+maxLinear() -> minLinear() * 2.
+minAng() -> (maxW() - minW())/2 .
+maxAng() -> minAng() * 2.
+minSize() -> 0.025 .
+creatureSize() -> minSize() / 2.
 maxCreatures() -> 10.
-epsilon () -> 0.0000001.
+maxAgilityPoints() -> 5.
+epsilon() -> 0.0000001.
 
 getV (User) -> 
 	{V, _} = dict:fetch("v", User),
@@ -28,6 +31,13 @@ putV (VC, User) ->
 	{_, W} = dict:fetch("v", User),
 	NewUser = dict:store("v", {V,W}, User),
 	dict:store("theta", Theta, NewUser).
+
+getAgility (User) ->
+	Points = dict:fetch("agility", User),
+	{Linear, Ang} = dict:fetch("a", User),
+	LinearGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxLinear() / minLinear()) * (1 - math:exp(-Points/maxAgilityPoints())), 
+	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng()) * (1 - math:exp(-Points/maxAgilityPoints())), 
+	{LinearGain*Linear, AngGain*Ang}.
 
 start (Port) ->
 	LMPid = whereis(loginmanager),
@@ -128,10 +138,39 @@ sendCreature(Name, C, Sockets) ->
 	[gen_tcp:send(S, list_to_binary(UD2)) || S <- Sockets].
 
 collision_handler(Users, Creatures) ->
-	NUsers = dict:from_list([{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)]),
+	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
 	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
-	NewCreatures = creature_collision (NCreatures, dict:from_list(NCreatures)),
-	{NUsers, NewCreatures}.
+	NCreatures1 = creature_collision (NCreatures, dict:from_list(NCreatures)),
+	{NewUsers, NewCreatures} = user_creature_collisions (NUsers, NCreatures1, dict:from_list(NUsers), dict:from_list(NCreatures1)),
+	{NewUsers, NewCreatures}.
+
+user_creature_collisions ([], _, Users, Creatures) -> {Users, Creatures};
+user_creature_collisions ([{K,U} | Us], [], Users, Creatures) -> user_creature_collisions (Us, dict:to_list(Creatures), dict:store(K, U, Users), Creatures);
+user_creature_collisions ([{_,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
+	XU = dict:fetch("pos", U),
+	XC = dict:fetch("pos", C),
+	XUXC = add(XU, mult(XC, -1)),
+	Size = dict:fetch("size", U),
+	case norm(XUXC) < (creatureSize() + Size) of
+		true -> 
+			Color = dict:fetch("color", C),
+			Points = dict:fetch("agility", U),
+			UArea = Size * Size * math:pi(),
+			CArea = creatureSize() * creatureSize() * math:pi(),
+			case Color of
+				"green" -> 
+					NewPoints = Points + 1,
+					NewSize = math:sqrt((UArea + CArea) / math:pi());
+				_ -> 
+					NewPoints = Points - 1,
+					NewSize = Size
+			end,
+			NUser = dict:store("size", NewSize, U),
+			NewUser = dict:store("agility", NewPoints, NUser),
+			NewCreatures = dict:erase(KC, Creatures);
+		_ -> {NewUser, NewCreatures} = {U, Creatures}
+	end,
+	user_creature_collisions ([NewUser | Us], Cs, Users, NewCreatures).
 
 creature_collision ([], Creatures) -> Creatures;
 creature_collision ([C | Cs], Creatures) ->
@@ -185,7 +224,7 @@ update_step(Users, Creatures, Time) ->
 updateCreature (C, Time) -> updateUser(C, Time). 
 
 updateUser(User, Time) ->
-	{Linear, Ang} = dict:fetch("a", User),
+	{Linear, Ang} = getAgility(User), 
 	{V, W} = dict:fetch("v", User),
 	{X, Y} = dict:fetch("pos", User),
 	Theta = dict:fetch("theta", User),
@@ -223,7 +262,8 @@ user_handler(Users) ->
 			SizeDict = dict:store("size", minSize(), Pos),
 			Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
 			NewUser = dict:store("score", 0, Orientation),
-			Result = dict:store(Sock, NewUser, Users),
+			NewUser1 = dict:store("agility", 0, NewUser),
+			Result = dict:store(Sock, NewUser1, Users),
 			io:format("USER ADDED~n"),
 			gen_tcp:send(Sock, list_to_binary("user added\n"));
 		{ok, _, Sock, loginmanager} -> 
@@ -246,31 +286,31 @@ user_handler(Users) ->
 		{press, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{getLinear(), Ang}, User), Users);
+			Result = dict:store(Sock,dict:store("a",{minLinear(), Ang}, User), Users);
 		{press, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, Ang-getAng()}, User), Users);
+			Result = dict:store(Sock,dict:store("a",{Linear, Ang-minAng()}, User), Users);
 		{press, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, Ang+getAng()}, User), Users);
+			Result = dict:store(Sock,dict:store("a",{Linear, Ang+minAng()}, User), Users);
 		{release, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{-getLinear(), Ang}, User), Users);
+			Result = dict:store(Sock,dict:store("a",{-minLinear(), Ang}, User), Users);
 		{release, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
 			{V, _} = dict:fetch("v", User),
-			NewAng = Ang + getAng(),
+			NewAng = Ang + minAng(),
 			NewUser = dict:store("v", {V, 0}, User),
 			Result = dict:store(Sock, dict:store("a", {Linear, NewAng}, NewUser), Users);
 		{release, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
 			{V, _} = dict:fetch("v", User),
-			NewAng = Ang - getAng(),
+			NewAng = Ang - minAng(),
 			NewUser = dict:store("v", {V, 0}, User),
 			Result  = dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users)
 	after timeout() -> Result = Users 
