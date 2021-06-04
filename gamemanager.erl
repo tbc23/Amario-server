@@ -1,5 +1,5 @@
 -module(gamemanager).
--import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2])
+-import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2]).
 -export([start/1]).
 
 timeout() -> 0 .
@@ -17,8 +17,18 @@ minSize () -> 0.025 .
 creatureSize () -> minSize() / 2.
 maxCreatures() -> 10.
 
+getV (User) -> 
+	{V, _} = dict:fetch("v", User),
+	Theta = dict:fetch("theta", User),
+	fromPolar({V, Theta}).
+
+putV (VC, User) ->
+	{V, Theta} = toPolar(VC),
+	{_, W} = dict:fetch("v", User),
+	NewUser = dict:store("v", {V,W}, User),
+	dict:store("theta", Theta, NewUser).
+
 start (Port) ->
-	%SPId = whereis(server),
 	LMPid = whereis(loginmanager),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
 	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), dict:new(), timenow(), 0) end)),
@@ -112,36 +122,33 @@ sendCreature(Name, C, Sockets) ->
 	[gen_tcp:send(S, list_to_binary(UD2)) || S <- Sockets].
 
 collision_handler(Users, Creatures) ->
-	NewUsers = dict:from_list([{K, user_collision(U, Users, Creatures)}|| {K, U} <- dict:to_list(Users)]),
-	NewCreatures = dict:from_list([{K, creature_collision(C, Users, Creatures)} || {K, C} <- dict:to_list(Creatures)]),
-	{NewUsers, NewCreatures}.
+	NUsers = dict:from_list([{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)]),
+	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
+	NewCreatures = creature_collision (NCreatures, dict:from_list(NCreatures)),
+	{NUsers, NewCreatures}.
 
-creature_collision (Creature, _, Creatures) -> 
-	NCreature = wall_collision (Creature),
-	CList = [C || {_, C} <- dict:to_list(Creatures)],
-	NewCreature = creature2creature(NCreature, CList),
-	NewCreature.
-
-creature2creature (C1, C2) ->
-	{VN1, W1} = dict:fetch("v", C1),
-	Theta1 = dict:fetch("theta", C1),
-	{VN2, W2} = dict:fetch("v", C2),
-	Theta2 = dict:fetch("theta", C2),
-	V1 = fromPolar(VN1, Theta1),
-	V2 = fromPolar(VN2, Theta2),
+creature_collision ([], Creatures) -> Creatures;
+creature_collision ([C | Cs], Creatures) ->
+	NewCreatures = creature2creature (C, Cs, Creatures),
+	creature_collision (Cs, NewCreatures).
+	
+creature2creature (_, [], CreatureDict) -> CreatureDict;
+creature2creature ({K1,C1}, [{K2,C2} | Creatures], CreatureDict) ->
 	X1X2 = add(dict:fetch("pos", C1), mult(dict:fetch("pos", C2), -1)), 
-	X2X1 = mult(X1X2, -1),
-	VF1 = add(V1, mult(X1X2, dot(add(V2, mult(V1, -1))), X1X2 / (norm(X1X2)*norm(X1X2))),
-	VF2 = add(V2, mult(X2X1, dot(add(V1, mult(V2, -1))), X2X1 / (norm(X2X1)*norm(X2X1))),
-	{NewV1, NewTheta1} = toPolar(VF1),
-	{NewV2, NewTheta2} = toPolar(VF2),
-	NewC1 = dict:store("v", {NewV1, W1}, C1),
-	NewC2 = dict:store("v", {NewV2, W2}, C2),
-	{dict:store("theta", NewTheta1, C1), dict:store("theta", NewTheta2, C2)}.
-
-user_collision (User, _, _) -> 
-	NewUser = wall_collision (User),
-	NewUser.
+	Norm = norm(X1X2),
+	case Norm < 2 * creatureSize() of
+		true ->
+			X2X1 = mult(X1X2, -1),
+			{V1,V2} = {getV(C1), getV(C2)}, 
+			V1V2 = add(V1, mult(V2, -1)),
+			V2V1 = mult(V1V2, -1),
+			VF1 = add(V1, mult(X1X2, dot(V2V1, X1X2 / (Norm*Norm)))),
+			VF2 = add(V2, mult(X2X1, dot(V1V2, X2X1 / (Norm*Norm)))),
+			NCreatureDict = dict:store(K1, putV(VF1, C1), CreatureDict),
+			NewCreatureDict = dict:store(K2, putV(VF2, C2), NCreatureDict);
+		_ -> NewCreatureDict = CreatureDict
+	end,
+	creature2creature ({K1,C1}, Creatures, NewCreatureDict).
 
 wall_collision (User) ->
 	{X, Y} = dict:fetch("pos", User),
