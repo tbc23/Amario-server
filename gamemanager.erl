@@ -37,7 +37,8 @@ getAgility (User, user) ->
 	Points = dict:fetch("agility", User),
 	{Linear, Ang} = dict:fetch("a", User),
 	LinearGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxLinear() / minLinear()) * (1 - math:exp(-Points/maxAgilityPoints())), 
-	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
+	%AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
+	AngGain = 1,
 	{LinearGain*Linear, AngGain*Ang}.
 
 start (Port) ->
