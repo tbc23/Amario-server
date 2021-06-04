@@ -13,7 +13,7 @@ maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
 minLinear() -> (maxV() - minV())/2 .
 maxLinear() -> minLinear() * 2.
-minAng() -> (maxW() - minW())/2 .
+minAng() -> maxW() / 4.
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
 creatureSize() -> minSize() / 2.
@@ -32,11 +32,12 @@ putV (VC, User) ->
 	NewUser = dict:store("v", {V,W}, User),
 	dict:store("theta", Theta, NewUser).
 
-getAgility (User) ->
+getAgility (Creature, creature) -> dict:fetch("a", Creature);
+getAgility (User, user) ->
 	Points = dict:fetch("agility", User),
 	{Linear, Ang} = dict:fetch("a", User),
 	LinearGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxLinear() / minLinear()) * (1 - math:exp(-Points/maxAgilityPoints())), 
-	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng()) * (1 - math:exp(-Points/maxAgilityPoints())), 
+	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
 	{LinearGain*Linear, AngGain*Ang}.
 
 start (Port) ->
@@ -141,12 +142,12 @@ collision_handler(Users, Creatures) ->
 	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
 	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
 	NCreatures1 = creature_collision (NCreatures, dict:from_list(NCreatures)),
-	{NewUsers, NewCreatures} = user_creature_collisions (NUsers, NCreatures1, dict:from_list(NUsers), dict:from_list(NCreatures1)),
+	{NewUsers, NewCreatures} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
 	{NewUsers, NewCreatures}.
 
 user_creature_collisions ([], _, Users, Creatures) -> {Users, Creatures};
 user_creature_collisions ([{K,U} | Us], [], Users, Creatures) -> user_creature_collisions (Us, dict:to_list(Creatures), dict:store(K, U, Users), Creatures);
-user_creature_collisions ([{_,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
+user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 	XU = dict:fetch("pos", U),
 	XC = dict:fetch("pos", C),
 	XUXC = add(XU, mult(XC, -1)),
@@ -159,10 +160,10 @@ user_creature_collisions ([{_,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 			CArea = creatureSize() * creatureSize() * math:pi(),
 			case Color of
 				"green" -> 
-					NewPoints = Points + 1,
+					{_, NewPoints} = threshold(Points + 1, 0, maxAgilityPoints()),
 					NewSize = math:sqrt((UArea + CArea) / math:pi());
 				_ -> 
-					NewPoints = Points - 1,
+					{_, NewPoints} = threshold(Points - 1, 0, maxAgilityPoints()),
 					NewSize = Size
 			end,
 			NUser = dict:store("size", NewSize, U),
@@ -170,7 +171,7 @@ user_creature_collisions ([{_,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 			NewCreatures = dict:erase(KC, Creatures);
 		_ -> {NewUser, NewCreatures} = {U, Creatures}
 	end,
-	user_creature_collisions ([NewUser | Us], Cs, Users, NewCreatures).
+	user_creature_collisions ([{KU,NewUser} | Us], Cs, Users, NewCreatures).
 
 creature_collision ([], Creatures) -> Creatures;
 creature_collision ([C | Cs], Creatures) ->
@@ -217,14 +218,14 @@ wall_collision (User) ->
 	NewUser.
 
 update_step(Users, Creatures, Time) ->
-	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
+	UpUsers = dict:from_list([{K, updateUser(U, Time, user)} || {K, U} <- dict:to_list(Users)]),
 	UpCreatures = dict:from_list([{K, updateCreature(C, Time)} || {K, C} <- dict:to_list(Creatures)]),
 	{UpUsers, UpCreatures}.
 
-updateCreature (C, Time) -> updateUser(C, Time). 
+updateCreature (C, Time) -> updateUser(C, Time, creature). 
 
-updateUser(User, Time) ->
-	{Linear, Ang} = getAgility(User), 
+updateUser(User, Time, Option) ->
+	{Linear, Ang} = getAgility(User, Option), 
 	{V, W} = dict:fetch("v", User),
 	{X, Y} = dict:fetch("pos", User),
 	Theta = dict:fetch("theta", User),
