@@ -69,7 +69,8 @@ parse_requests (LMPid, Sock) ->
 					gamemanager ! {press, Key, Sock};
 				"release" ->
 					[Key] = Args,
-          gamemanager ! {release, Key, Sock}
+          gamemanager ! {release, Key, Sock};
+				_ -> gamemanager ! bad_request
 			end,
 			parse_requests (LMPid, Sock);
 		{tcp_closed, _} ->
@@ -169,6 +170,7 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 			end,
 			NUser = dict:store("size", NewSize, U),
 			NewUser = dict:store("agility", NewPoints, NUser),
+			gamemanager ! {creature_died, KC},
 			NewCreatures = dict:erase(KC, Creatures);
 		_ -> {NewUser, NewCreatures} = {U, Creatures}
 	end,
@@ -189,7 +191,6 @@ creature2creature ({K1,C1}, [{K2,C2} | Creatures], CreatureDict) ->
 			{V1,V2} = {getV(C1), getV(C2)}, 
 			V1V2 = add(V1, mult(V2, -1)),
 			V2V1 = mult(V1V2, -1),
-			%io:format("V1V2:~p | V2V1:~p | X1X2:~p | Norm:~p~n", [V1V2,V2V1,X1X2,Norm]),
 			Dot = dot(V2V1, mult(X1X2, 1 / (Norm*Norm + epsilon()))),
 			VF1 = add(V1, mult(X1X2, Dot)),
 			VF2 = add(V2, mult(X2X1, Dot)), 
@@ -285,6 +286,9 @@ user_handler(Users) ->
 				_ ->
 					Result = Users
 			end;
+		{creature_died, Name} ->
+			Result = Users,
+			[gen_tcp:send(S, list_to_binary(Name ++ " died\n")) || {S, _} <- dict:to_list(Users)];
 		{press, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
@@ -314,7 +318,8 @@ user_handler(Users) ->
 			{V, _} = dict:fetch("v", User),
 			NewAng = Ang - minAng(),
 			NewUser = dict:store("v", {V, 0}, User),
-			Result  = dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users)
+			Result  = dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users);
+		_ -> Result = Users
 	after timeout() -> Result = Users 
 	end,
 	Result .
