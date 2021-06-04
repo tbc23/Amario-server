@@ -13,7 +13,7 @@ maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
 minLinear() -> (maxV() - minV())/2 .
 maxLinear() -> minLinear() * 2.
-minAng() -> maxW() / 4.
+minAng() -> maxW() / 2.
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
 creatureSize() -> minSize() / 2.
@@ -37,8 +37,7 @@ getAgility (User, user) ->
 	Points = dict:fetch("agility", User),
 	{Linear, Ang} = dict:fetch("a", User),
 	LinearGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxLinear() / minLinear()) * (1 - math:exp(-Points/maxAgilityPoints())), 
-	%AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
-	AngGain = 1,
+	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
 	{LinearGain*Linear, AngGain*Ang}.
 
 start (Port) ->
@@ -236,7 +235,9 @@ updateUser(User, Time, Option) ->
 	{Type, UpV} = threshold(NewV, minV(), maxV()),
 	{_, UpW} = threshold(NewW, minW(), maxW()),
 	case Type of 
-		min -> Up = dict:store("a", {0, Ang}, User);
+		min -> 
+			{_, NAng} = dict:fetch("a", User),
+			Up = dict:store("a", {0, NAng}, User);
 		_ -> Up = User
 	end,
 	NewT = Theta + W * Time,
