@@ -8,32 +8,79 @@ spawn_time() -> 5 .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
 creatureV() -> minV() * 2 .
-minV() -> 0.1 .
-maxV() -> 1 .
+minV() -> 0.1 . % 10s to fo from bottom to top of screen
+maxV() -> 1 . % 1s to go from bottom to top of screen
 maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
-minLinear() -> (maxV() - minV())/2 .
-maxLinear() -> minLinear() * 2.
-minAng() -> maxW() / 2.
+minLinear() -> (maxV() - minV())/2 . % 2s to go from min speed to max speed
+maxLinear() -> minLinear() * 2. % 1s to do the same as above line
+minAng() -> maxW() / 2. % 2s to go from no speed to max angular speed
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
 creatureSize() -> minSize() / 2.
 maxCreatures() -> 10.
 maxAgilityPoints() -> 5.
+fuelBurnW() -> 1 / (maxLinear() * 2) . % 5 is the time it takes to burn at max acceleration 
+fuelBurnA() -> 1 / (maxAng() * 2) .
+fuelRefill() -> 1 / 8. % 1 / time to refill
 epsilon() -> 0.0000001.
 
 update_step(Users, Creatures, Time) ->
-	UpUsers = dict:from_list([{K, updateUser(U, Time, user)} || {K, U} <- dict:to_list(Users)]),
+	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
 	UpCreatures = dict:from_list([{K, updateCreature(C, Time)} || {K, C} <- dict:to_list(Creatures)]),
 	{UpUsers, UpCreatures}.
 
-updateCreature (C, Time) -> updateUser(C, Time, creature). 
+updateCreature (C, Time) -> 
+	{Linear,Ang} = dict:fetch("a", C),
+	{V, W} = dict:fetch("v", C),
+	{X, Y} = dict:fetch("pos", C),
+	Theta = dict:fetch("theta", C),
+	NewV = V + Linear * Time,
+	NewW = W + Ang * Time,
+	{Type, UpV} = threshold(NewV, minV(), maxV()),
+	{_, UpW} = threshold(NewW, minW(), maxW()),
+	case Type of 
+		min -> 
+			{_, NAng} = dict:fetch("a", C),
+			Up = dict:store("a", {0, NAng}, C);
+		_ -> Up = C
+	end,
+	NewT = Theta + W * Time,
+	NewX = X + V * math:cos(Theta) * Time,
+	NewY = Y + V * math:sin(Theta) * Time,
+	Up1 = dict:store("v", {UpV,UpW}, Up),
+	Up2 = dict:store("pos", {NewX, NewY}, Up1),
+	Up3 = dict:store("theta", NewT, Up2),
+	Up3 .
 
-updateUser(User, Time, Option) ->
-	{Linear, Ang} = getAgility(User, Option), 
+updateUser(User, Time) ->
+	{L, A} = getAgility(User), 
 	{V, W} = dict:fetch("v", User),
 	{X, Y} = dict:fetch("pos", User),
 	Theta = dict:fetch("theta", User),
+	{FW,FA,FD} = dict:fetch("fuel", User),
+	case L > 0 of
+		true -> BurnL = 1;
+		_ -> BurnL = 0
+	end,
+	case A < 0 of 
+		true -> BurnA = 1; 
+		_ -> BurnA = 0
+	end,
+	{_, NewFW} = threshold(FW + (fuelRefill() - BurnL * L * fuelBurnW()) * Time, 0.0, 1.0),
+	{_, NewFA} = threshold(FA + (fuelRefill() + BurnA * A * fuelBurnA()) * Time, 0.0, 1.0),
+	{_, NewFD} = threshold(FD + (fuelRefill() - (1-BurnA) * A * fuelBurnA()) * Time, 0.0, 1.0),
+	Ang = 
+		if 
+			(NewFA == 0) and (A < 0) -> 0;
+			(NewFD == 0) and (A > 0) -> 0;
+			true -> A
+		end,
+	Linear = 
+		if 
+			(NewFW == 0) and (L > 0) -> 0;
+			true -> L
+		end,
 	NewV = V + Linear * Time,
 	NewW = W + Ang * Time,
 	{Type, UpV} = threshold(NewV, minV(), maxV()),
@@ -50,7 +97,8 @@ updateUser(User, Time, Option) ->
 	Up1 = dict:store("v", {UpV,UpW}, Up),
 	Up2 = dict:store("pos", {NewX, NewY}, Up1),
 	Up3 = dict:store("theta", NewT, Up2),
-	Up3 .
+	Up4 = dict:store("fuel", {NewFW,NewFA,NewFD}, Up3),
+	Up4 .
 
 collision_handler(Users, Creatures) ->
 	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
@@ -142,8 +190,7 @@ putV (VC, User) ->
 	NewUser = dict:store("v", {V,W}, User),
 	dict:store("theta", Theta, NewUser).
 
-getAgility (Creature, creature) -> dict:fetch("a", Creature);
-getAgility (User, user) ->
+getAgility (User) ->
 	Points = dict:fetch("agility", User),
 	{Linear, Ang} = dict:fetch("a", User),
 	LinearGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxLinear() / minLinear()) * (1 - math:exp(-Points/maxAgilityPoints())), 

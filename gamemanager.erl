@@ -71,12 +71,16 @@ updateClient(Users, Creatures) ->
 
 sendUser (User, Sockets) ->
 	{X, Y} = dict:fetch("pos", User),
+	{FW,FA,FD} = dict:fetch("fuel", User),
+	io:format("FW: ~p | FA: ~p | FD: ~p~n", [FW,FA,FD]),
 	UD1 = dict:fetch("name", User),
 	UD2 = UD1 ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
 	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("theta", User)), 
 	UD4 = UD3 ++ " " ++ float_to_list(dict:fetch("size", User)),
-	UD5 = UD4 ++ " " ++ integer_to_list(dict:fetch("score", User)) ++ "\n",
-	[gen_tcp:send(S, list_to_binary(UD5)) || S <- Sockets ].
+	UD5 = UD4 ++ " " ++ integer_to_list(dict:fetch("score", User)),
+	UD6 = UD5 ++ " " ++ float_to_list(FW) ++ " " ++ float_to_list(FA),
+	UD7 = UD6 ++ " " ++ float_to_list(FD) ++ "\n",
+	[gen_tcp:send(S, list_to_binary(UD7)) || S <- Sockets ].
 
 sendCreature(Name, C, Sockets) ->
 	{X, Y} = dict:fetch("pos", C),
@@ -94,7 +98,8 @@ user_handler(Users) ->
 			Accel = dict:store("a", {0,0} , Player),
 			Vel = dict:store("v", {minV(), 0}, Accel),
 			Pos = dict:store("pos", {rand:uniform()*screenRatio(),rand:uniform()}, Vel),
-			SizeDict = dict:store("size", minSize(), Pos),
+			Fuel = dict:store("fuel", {1.0,1.0,1.0}, Pos),
+			SizeDict = dict:store("size", minSize(), Fuel),
 			Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
 			NewUser = dict:store("score", 0, Orientation),
 			NewUser1 = dict:store("agility", 0, NewUser),
