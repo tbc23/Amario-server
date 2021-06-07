@@ -24,6 +24,11 @@ fuelBurnW() -> 1 / (maxLinear() * 2) . % 5 is the time it takes to burn at max a
 fuelBurnA() -> 1 / (maxAng() * 2) .
 fuelRefill() -> 1 / 8. % 1 / time to refill
 epsilon() -> 0.0000001.
+maxCreatureAng() -> 2 * maxAng().
+creatureTurningAng() -> round(rand:normal()) * (maxCreatureAng() / 2 * rand:uniform() + maxCreatureAng() / 2).
+creatureTurningTime() -> math:pi() / (2 * maxCreatureAng()).
+creatureWaitTurn() -> abs(1 * rand:normal() + 2).
+
 
 update_step(Users, Creatures, Time) ->
 	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
@@ -31,12 +36,32 @@ update_step(Users, Creatures, Time) ->
 	{UpUsers, UpCreatures}.
 
 updateCreature (C, Time) -> 
-	{Linear,Ang} = dict:fetch("a", C),
+	{Linear, A} = dict:fetch("a", C),
 	{V, W} = dict:fetch("v", C),
 	{X, Y} = dict:fetch("pos", C),
 	Theta = dict:fetch("theta", C),
+	Timer = dict:fetch("timer", C),
+	TimeElapsed = (timenow() - Timer) / 1000,
+	WaitTime = creatureWaitTurn(),
+	TurningTime = creatureTurningTime(),
+	NewTimer = 
+		if 
+			(A == 0) and (TimeElapsed > WaitTime) -> 0;
+			(A =/= 0) and (TimeElapsed > TurningTime) -> 0;
+			true -> Timer
+		end,
+	Ang = 
+		if 
+			(A == 0) and (TimeElapsed > WaitTime) -> creatureTurningAng();
+			(A =/= 0) and (TimeElapsed > TurningTime) -> 0;
+			true -> A
+		end,
 	NewV = V + Linear * Time,
-	NewW = W + Ang * Time,
+	NewW = 
+		if 
+			(A =/= 0) and (TimeElapsed > TurningTime) -> W + Ang * Time;
+			true -> 0
+		end,
 	{Type, UpV} = threshold(NewV, minV(), maxV()),
 	{_, UpW} = threshold(NewW, minW(), maxW()),
 	case Type of 
@@ -51,7 +76,9 @@ updateCreature (C, Time) ->
 	Up1 = dict:store("v", {UpV,UpW}, Up),
 	Up2 = dict:store("pos", {NewX, NewY}, Up1),
 	Up3 = dict:store("theta", NewT, Up2),
-	Up3 .
+	Up4 = dict:store("a", {Linear, Ang}, Up3),
+	Up5 = dict:store("timer", NewTimer, Up4),
+	Up5.
 
 updateUser(User, Time) ->
 	{L, A} = getAgility(User), 
@@ -197,6 +224,7 @@ getAgility (User) ->
 	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
 	{LinearGain*Linear, AngGain*Ang}.
 
+
 spawnCreatures(SpawnTime, Creatures) ->
 	NumCreatures = dict:size(Creatures),
 	case (SpawnTime > spawn_time()) and (NumCreatures < maxCreatures()) of
@@ -207,12 +235,13 @@ spawnCreatures(SpawnTime, Creatures) ->
 			C3 = dict:store("size", creatureSize(), C2),
 			C4 = dict:store("theta", 2*math:pi()*rand:uniform(), C3),
 			C5 = dict:store("a", {0, 0}, C4),
+			C6 = dict:store("timer", timenow(), C5),
 			case rand:uniform() > 0.5 of
 				true -> Key = "green";
 				_ -> Key = "red"
 			end,
-			C6 = dict:store("color", Key, C5),
-			NewCreatures = dict:store(integer_to_list(timenow()), C6, Creatures);
+			C7 = dict:store("color", Key, C6),
+			NewCreatures = dict:store(integer_to_list(timenow()), C7, Creatures);
 		_ -> {NewSpawnTime, NewCreatures} = {SpawnTime, Creatures}
 	end,
 	{NewSpawnTime, NewCreatures}.

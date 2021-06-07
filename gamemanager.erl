@@ -89,7 +89,6 @@ sendCreature(Name, C, Sockets) ->
 	UD2 = UD1 ++ " " ++ float_to_list(dict:fetch("size", C)) ++ "\n",
 	[gen_tcp:send(S, list_to_binary(UD2)) || S <- Sockets].
 
-
 user_handler(Users) ->
 	Size = dict:size(Users), 
 	receive
