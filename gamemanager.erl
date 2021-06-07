@@ -10,9 +10,7 @@ start (Port) ->
 	LMPid = whereis(loginmanager),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
 	NumObstacles = round(minObstacles() + (maxObstacles() - minObstacles()) * rand:uniform()),
-	io:format("started obstacle gen\n"),
 	Obstacles = gen_obstacles([], NumObstacles),
-	io:format("generated obstacles~n"),
 	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), Obstacles, timenow(), 0) end)),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
 	receive stop -> ok end.
@@ -113,7 +111,8 @@ user_handler(Users, Obstacles) ->
 			NewUser1 = dict:store("agility", 0, NewUser),
 			Result = dict:store(Sock, NewUser1, Users),
 			io:format("USER ADDED~n"),
-			gen_tcp:send(Sock, list_to_binary(integer_to_list(length(Obstacles)) ++ "\n")),
+			gen_tcp:send(Sock, list_to_binary("user added\n")),
+			gen_tcp:send(Sock, list_to_binary("obstacles " ++ integer_to_list(length(Obstacles)) ++ "\n")),
 			[sendObstacle (O, Sock) || O <- Obstacles];
 		{ok, _, Sock, loginmanager} -> 
 			gen_tcp:send(Sock, list_to_binary("game full\n")),
