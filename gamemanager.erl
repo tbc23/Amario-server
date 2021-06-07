@@ -1,5 +1,5 @@
 -module(gamemanager).
--import(physics,[update_step/3,collision_handler/2,spawnCreatures/2]).
+-import(physics,[update_step/3,collision_handler/3,spawnCreatures/3,spawnPosition/3]).
 -import(physics,[timenow/0,epsilon/0,minV/0,screenRatio/0,minSize/0]).
 -import(physics,[minLinear/0,minAng/0,minObstacles/0,maxObstacles/0,minObstacleSize/0,maxObstacleSize/0,gen_obstacles/2]).
 -export([start/1]).
@@ -52,9 +52,9 @@ game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime) ->
 	NewUsers = user_handler(Users, Obstacles),
 	NewTime = timenow(),
 	TimeStep = (NewTime - Time) / 1000,
-	{NewSpawnTime, SCreatures} = spawnCreatures(SpawnTime + TimeStep, Creatures),
+	{NewSpawnTime, SCreatures} = spawnCreatures(SpawnTime + TimeStep, Creatures, Obstacles),
 	{UpUsers, UpCreatures} = update_step(NewUsers, SCreatures, TimeStep),
-	{ColUsers, ColCreatures} = collision_handler(UpUsers, UpCreatures),
+	{ColUsers, ColCreatures} = collision_handler(UpUsers, UpCreatures, Obstacles),
 	updateClient(ColUsers, ColCreatures),
 	FPS = 1 / (epsilon() + TimeStep),
 	case FPS < 60 of 
@@ -103,13 +103,16 @@ user_handler(Users, Obstacles) ->
 			Player = dict:store("name", User, dict:new()),
 			Accel = dict:store("a", {0,0} , Player),
 			Vel = dict:store("v", {minV(), 0}, Accel),
-			Pos = dict:store("pos", {rand:uniform()*screenRatio(),rand:uniform()}, Vel),
+			Blobs = [U || {_,U} <- dict:to_list(Users)] ++ Obstacles,
+			GenPos = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, Blobs, Blobs),
+			Pos = dict:store("pos", GenPos, Vel),
 			Fuel = dict:store("fuel", {1.0,1.0,1.0}, Pos),
 			SizeDict = dict:store("size", minSize(), Fuel),
 			Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
 			NewUser = dict:store("score", 0, Orientation),
 			NewUser1 = dict:store("agility", 0, NewUser),
-			Result = dict:store(Sock, NewUser1, Users),
+			NewUser2 = dict:store("collision_flag", false, NewUser1),
+			Result = dict:store(Sock, NewUser2, Users),
 			io:format("USER ADDED~n"),
 			gen_tcp:send(Sock, list_to_binary("user added\n")),
 			gen_tcp:send(Sock, list_to_binary("obstacles " ++ integer_to_list(length(Obstacles)) ++ "\n")),

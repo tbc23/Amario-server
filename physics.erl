@@ -1,8 +1,9 @@
 -module(physics).
 -import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2]).
--export([update_step/3,collision_handler/2,spawnCreatures/2]).
+-export([update_step/3,collision_handler/3,spawnCreatures/3]).
 -export([timenow/0,epsilon/0,minV/0,screenRatio/0,minSize/0]).
 -export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
+-export([spawnPosition/3]).
 
 spawn_time() -> 5 .
 timenow() -> erlang:monotonic_time(millisecond) .
@@ -138,12 +139,36 @@ updateUser(User, Time) ->
 	Up4 = dict:store("fuel", {NewFW,NewFA,NewFD}, Up3),
 	Up4 .
 
-collision_handler(Users, Creatures) ->
+collision_handler(Users, Creatures, Obstacles) ->
 	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
 	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
 	NCreatures1 = creature_collision (NCreatures, dict:from_list(NCreatures)),
-	{NewUsers, NewCreatures} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
+	{NUsers2, NCreatures2} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
+	NewUsers = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
+	NewCreatures = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
 	{NewUsers, NewCreatures}.
+
+obstacle_collisions([], _, _, Users, _) -> dict:from_list(Users);
+obstacle_collisions([{K,U} | Us], [], Obstacles, Users, Flag) -> 
+	NewU = dict:store("collision_flag", Flag, U),
+	obstacle_collisions (Us, Obstacles, Obstacles, [{K, NewU} | Users], false);
+obstacle_collisions([{K,U} | Us], [O | Os], Obstacles, Users, Flag) ->
+	ColFlag = dict:fetch("collision_flag", U),
+	X1X2 = add(dict:fetch("pos", U), mult(dict:fetch("pos", O), -1)), 
+	{USize, OSize} = {dict:fetch("size", U), dict:fetch("size", O)},
+	Norm = norm(X1X2),
+	case (Norm < (USize + OSize)) and (ColFlag == false) of
+		true ->
+			V = mult(getV(U), -1), 
+			Dot = dot(V, mult(X1X2, 1 / (Norm*Norm + epsilon()))),
+			VF = add(V, mult(X1X2, Dot)), 
+			NewU = putV(VF, U),
+			NewFlag = true;
+		_ -> 
+			NewFlag = (Norm < (USize + OSize)),
+			NewU = U
+	end,
+	obstacle_collisions([{K,NewU} | Us], Os, Obstacles, Users, (NewFlag) or (Flag)).
 
 user_creature_collisions ([], _, Users, Creatures) -> {Users, Creatures};
 user_creature_collisions ([{K,U} | Us], [], Users, Creatures) -> user_creature_collisions (Us, dict:to_list(Creatures), dict:store(K, U, Users), Creatures);
@@ -235,24 +260,36 @@ getAgility (User) ->
 	AngGain = 1 + math:exp(1) / (math:exp(1)-1) * (-1 + maxAng() / minAng() ) * (1 - math:exp(-Points/maxAgilityPoints())), 
 	{LinearGain*Linear, AngGain*Ang}.
 
+spawnPosition(Pos, [], _) -> Pos;
+spawnPosition(Pos, [B | Bs], Blobs) -> 
+	X1X2 = add(Pos, mult(dict:fetch("pos", B), -1)),
+	{Size, SizeU} = {minSize(), dict:fetch("size", B)},
+	Norm = norm(X1X2),
+	case Norm < (Size + SizeU) of
+		true -> Result = spawnPosition ({rand:uniform()*screenRatio(), rand:uniform()}, Blobs, Blobs);
+		_ -> Result = spawnPosition(Pos, Bs, Blobs)
+	end,
+	Result.
 
-spawnCreatures(SpawnTime, Creatures) ->
+spawnCreatures(SpawnTime, Creatures, Obstacles) ->
 	NumCreatures = dict:size(Creatures),
 	case (SpawnTime > spawn_time()) and (NumCreatures < maxCreatures()) of
 		true -> 
 			NewSpawnTime = 0,
-			C1 = dict:store("pos", {rand:uniform()*screenRatio(), rand:uniform()}, dict:new()),
+			Pos = spawnPosition({rand:uniform()*screenRatio(), rand:uniform()}, Obstacles, Obstacles),
+			C1 = dict:store("pos", Pos, dict:new()),
 			C2 = dict:store("v", {creatureV(), 0}, C1),
 			C3 = dict:store("size", creatureSize(), C2),
 			C4 = dict:store("theta", 2*math:pi()*rand:uniform(), C3),
 			C5 = dict:store("a", {0, 0}, C4),
 			C6 = dict:store("timers", {timenow(), creatureWaitTurn(), creatureTurningTime()}, C5),
+			C7 = dict:store("collision_flag", false, C6),
 			case rand:uniform() > 0.5 of
 				true -> Key = "green";
 				_ -> Key = "red"
 			end,
-			C7 = dict:store("color", Key, C6),
-			NewCreatures = dict:store(integer_to_list(timenow()), C7, Creatures);
+			C8 = dict:store("color", Key, C7),
+			NewCreatures = dict:store(integer_to_list(timenow()), C8, Creatures);
 		_ -> {NewSpawnTime, NewCreatures} = {SpawnTime, Creatures}
 	end,
 	{NewSpawnTime, NewCreatures}.
