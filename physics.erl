@@ -7,28 +7,27 @@
 spawn_time() -> 5 .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
-creatureV() -> minV() * 2 .
-minV() -> 0.1 . % 10s to fo from bottom to top of screen
-maxV() -> 1 . % 1s to go from bottom to top of screen
+creatureV() -> maxV() * 3 .
+minV() -> 1/10 . % 10s to fo from bottom to top of screen
+maxV() -> 1/2 . % 2s to go from bottom to top of screen
 maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
-minLinear() -> (maxV() - minV())/2 . % 2s to go from min speed to max speed
-maxLinear() -> minLinear() * 2. % 1s to do the same as above line
-minAng() -> maxW() / 2. % 2s to go from no speed to max angular speed
+minLinear() -> (maxV() - minV())/5 . % 5s to go from min speed to max speed
+maxLinear() -> minLinear() * 2. % 2.5s to do the same as above line
+minAng() -> maxW() / 3. % 2s to go from no speed to max angular speed
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
 creatureSize() -> minSize() / 2.
 maxCreatures() -> 10.
 maxAgilityPoints() -> 5.
-fuelBurnW() -> 1 / (maxLinear() * 2) . % 5 is the time it takes to burn at max acceleration 
-fuelBurnA() -> 1 / (maxAng() * 2) .
-fuelRefill() -> 1 / 8. % 1 / time to refill
+fuelBurnW() -> 1 / (maxLinear() * 4). % 4s to burn at max acceleration 
+fuelBurnA() -> 1 / (maxAng() * 3).
+fuelRefill() -> fuelBurnW() * maxLinear() / 4. % 4 times longer to refill than to burn
 epsilon() -> 0.0000001.
-maxCreatureAng() -> 2 * maxAng().
-creatureTurningAng() -> round(rand:normal()) * (maxCreatureAng() / 2 * rand:uniform() + maxCreatureAng() / 2).
-creatureTurningTime() -> math:pi() / (2 * maxCreatureAng()).
+maxCreatureAng() -> 3 * maxAng().
+creatureTurningAng() -> 2 * (round(rand:uniform()) - 0.5) * (maxCreatureAng() / 2 * rand:uniform() + maxCreatureAng() / 2).
+creatureTurningTime() -> abs(math:pi() / maxW() + math:pi() / (2 * maxW()) * rand:normal()).
 creatureWaitTurn() -> abs(1 * rand:normal() + 2).
-
 
 update_step(Users, Creatures, Time) ->
 	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
@@ -40,14 +39,23 @@ updateCreature (C, Time) ->
 	{V, W} = dict:fetch("v", C),
 	{X, Y} = dict:fetch("pos", C),
 	Theta = dict:fetch("theta", C),
-	Timer = dict:fetch("timer", C),
+	{Timer, WaitTime, TurningTime} = dict:fetch("timers", C),
 	TimeElapsed = (timenow() - Timer) / 1000,
-	WaitTime = creatureWaitTurn(),
-	TurningTime = creatureTurningTime(),
+	io:format("TimeElapsed: ~p | WaitTime: ~p | TurnTime: ~p | A: ~p~n", [TimeElapsed,WaitTime,TurningTime,A]),
+	NewWaitTime = 
+		if 
+			(A =/= 0) and (TimeElapsed > TurningTime) -> creatureWaitTurn();
+			true -> WaitTime
+		end,
+	NewTurningTime = 
+		if
+			(A == 0) and (TimeElapsed > WaitTime) -> creatureTurningTime();
+			true -> TurningTime
+		end,
 	NewTimer = 
 		if 
-			(A == 0) and (TimeElapsed > WaitTime) -> 0;
-			(A =/= 0) and (TimeElapsed > TurningTime) -> 0;
+			(A == 0) and (TimeElapsed > WaitTime) -> timenow();
+			(A =/= 0) and (TimeElapsed > TurningTime) -> timenow();
 			true -> Timer
 		end,
 	Ang = 
@@ -59,7 +67,7 @@ updateCreature (C, Time) ->
 	NewV = V + Linear * Time,
 	NewW = 
 		if 
-			(A =/= 0) and (TimeElapsed > TurningTime) -> W + Ang * Time;
+			(A =/= 0) and (TimeElapsed < TurningTime) -> W + A * Time;
 			true -> 0
 		end,
 	{Type, UpV} = threshold(NewV, minV(), maxV()),
@@ -77,7 +85,7 @@ updateCreature (C, Time) ->
 	Up2 = dict:store("pos", {NewX, NewY}, Up1),
 	Up3 = dict:store("theta", NewT, Up2),
 	Up4 = dict:store("a", {Linear, Ang}, Up3),
-	Up5 = dict:store("timer", NewTimer, Up4),
+	Up5 = dict:store("timers", {NewTimer,NewWaitTime,NewTurningTime}, Up4),
 	Up5.
 
 updateUser(User, Time) ->
@@ -235,7 +243,7 @@ spawnCreatures(SpawnTime, Creatures) ->
 			C3 = dict:store("size", creatureSize(), C2),
 			C4 = dict:store("theta", 2*math:pi()*rand:uniform(), C3),
 			C5 = dict:store("a", {0, 0}, C4),
-			C6 = dict:store("timer", timenow(), C5),
+			C6 = dict:store("timers", {timenow(), creatureWaitTurn(), creatureTurningTime()}, C5),
 			case rand:uniform() > 0.5 of
 				true -> Key = "green";
 				_ -> Key = "red"

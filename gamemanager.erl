@@ -72,7 +72,6 @@ updateClient(Users, Creatures) ->
 sendUser (User, Sockets) ->
 	{X, Y} = dict:fetch("pos", User),
 	{FW,FA,FD} = dict:fetch("fuel", User),
-	io:format("FW: ~p | FA: ~p | FD: ~p~n", [FW,FA,FD]),
 	UD1 = dict:fetch("name", User),
 	UD2 = UD1 ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
 	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("theta", User)), 
