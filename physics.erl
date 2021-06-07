@@ -2,7 +2,7 @@
 -import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2]).
 -export([update_step/3,collision_handler/2,spawnCreatures/2]).
 -export([timenow/0,epsilon/0,minV/0,screenRatio/0,minSize/0]).
--export([minLinear/0,minAng/0]).
+-export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
 
 spawn_time() -> 5 .
 timenow() -> erlang:monotonic_time(millisecond) .
@@ -28,6 +28,10 @@ maxCreatureAng() -> 3 * maxAng().
 creatureTurningAng() -> 2 * (round(rand:uniform()) - 0.5) * (maxCreatureAng() / 2 * rand:uniform() + maxCreatureAng() / 2).
 creatureTurningTime() -> abs(math:pi() / maxW() + math:pi() / (2 * maxW()) * rand:normal()).
 creatureWaitTurn() -> abs(1 * rand:normal() + 2).
+minObstacles() -> 3.
+maxObstacles() -> 8.
+minObstacleSize() -> 1.5 * minSize().
+maxObstacleSize() -> 3 * minObstacleSize().
 
 update_step(Users, Creatures, Time) ->
 	UpUsers = dict:from_list([{K, updateUser(U, Time)} || {K, U} <- dict:to_list(Users)]),
@@ -41,7 +45,6 @@ updateCreature (C, Time) ->
 	Theta = dict:fetch("theta", C),
 	{Timer, WaitTime, TurningTime} = dict:fetch("timers", C),
 	TimeElapsed = (timenow() - Timer) / 1000,
-	io:format("TimeElapsed: ~p | WaitTime: ~p | TurnTime: ~p | A: ~p~n", [TimeElapsed,WaitTime,TurningTime,A]),
 	NewWaitTime = 
 		if 
 			(A =/= 0) and (TimeElapsed > TurningTime) -> creatureWaitTurn();
@@ -253,6 +256,12 @@ spawnCreatures(SpawnTime, Creatures) ->
 		_ -> {NewSpawnTime, NewCreatures} = {SpawnTime, Creatures}
 	end,
 	{NewSpawnTime, NewCreatures}.
+
+gen_obstacles(Obstacles, 0) -> Obstacles;
+gen_obstacles(Obstacles, Size) ->
+	NObstacle = dict:store("pos", {rand:uniform()*screenRatio(), rand:uniform()}, dict:new()),
+	NewObstacle = dict:store("size", minObstacleSize() + (maxObstacleSize() - minObstacleSize()) * rand:uniform(), NObstacle),
+	gen_obstacles([NewObstacle | Obstacles], Size-1).
 
 threshold(Value, Min, Max) ->
 		if 
