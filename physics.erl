@@ -5,7 +5,7 @@
 -export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
 -export([spawnPosition/3]).
 
-spawn_time() -> abs(rand:normal() + 5) .
+spawn_time() -> 5.
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
 creatureV() -> maxV(minSize()) * 1.25.
@@ -13,8 +13,9 @@ minV() -> 1/10 . % 10s to fo from bottom to top of screen
 maxV(Size) -> minSize() / (2 * Size) . % 1.5s to go from bottom to top of screen if minSize
 maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
-minLinear() -> (maxV(minSize()) - minV())/5 . % 5s to go from min speed to max speed
-maxLinear() -> minLinear() * 2. % 2.5s to do the same as above line
+minLinear() -> (maxV(minSize()) - minV()) / 2 . % 2s to go from min speed to max speed
+maxLinear() -> minLinear() * 2. % 1s to do the same as above line
+linDecrease() -> (maxLinear() - minLinear()) / 80.
 minAng() -> maxW() / 3. % 2s to go from no speed to max angular speed
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
@@ -117,20 +118,24 @@ updateUser(User, Time) ->
 		if 
 			(NewFA == 0) and (A < 0) -> 0;
 			(NewFD == 0) and (A > 0) -> 0;
-			true -> A
+			true -> A 
 		end,
 	Linear = 
 		if 
 			(NewFW == 0) and (L > 0) -> 0;
 			true -> L
 		end,
+	{NL, NAng} = dict:fetch("a", User),
+	case NL > 0 of
+		true -> {_, NewL} = threshold(NL - linDecrease() * Time, minLinear(), maxLinear());
+		_ -> {_, NewL} = threshold(NL + linDecrease() * Time, -maxLinear(), -minLinear())
+	end,
 	NewV = V + Linear * Time,
 	NewW = W + Ang * Time,
 	{Type, UpV} = threshold(NewV, minV(), maxV(Size)),
 	{_, UpW} = threshold(NewW, minW(), maxW()),
 	case Type of 
 		min -> 
-			{_, NAng} = dict:fetch("a", User),
 			Up = dict:store("a", {0, NAng}, User);
 		_ -> Up = User
 	end,
@@ -143,7 +148,8 @@ updateUser(User, Time) ->
 	Up3 = dict:store("theta", NewT, Up2),
 	Up4 = dict:store("fuel", {NewFW,NewFA,NewFD}, Up3),
 	Up5 = dict:store("size", NewSize, Up4),
-	Up5 .
+	Up6 = dict:store("a", {NewL, NAng}, Up5),
+	Up6 .
 
 collision_handler(Users, Creatures, Obstacles) ->
 	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
@@ -314,3 +320,9 @@ threshold(Value, Min, Max) ->
 			Value > Max -> {max, Max};
 			true -> {none, Value}
 		end.
+
+sign (Value) ->
+	if 
+		Value < 0 -> -1;
+		true -> 1
+	end.
