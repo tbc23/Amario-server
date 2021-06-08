@@ -5,10 +5,10 @@
 -export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
 -export([spawnPosition/3]).
 
-spawn_time() -> 5 .
+spawn_time() -> abs(rand:normal() + 5) .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
-creatureV() -> maxV(minSize()) .
+creatureV() -> maxV(minSize()) * 1.25.
 minV() -> 1/10 . % 10s to fo from bottom to top of screen
 maxV(Size) -> minSize() / (2 * Size) . % 1.5s to go from bottom to top of screen if minSize
 maxW() -> 2 * math:pi() / 1 .
@@ -19,7 +19,7 @@ minAng() -> maxW() / 3. % 2s to go from no speed to max angular speed
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
 maxSize() -> 3 * minSize().
-sizeDecrease() -> (maxSize() - minSize()) / 40.
+sizeDecrease() -> (maxSize() - minSize()) / 120.
 spawnSize() -> 1.5 * minSize().
 creatureSize() -> minSize() / 2.
 maxCreatures() -> 10.
@@ -31,7 +31,7 @@ epsilon() -> 0.0000001.
 maxCreatureAng() -> 3 * maxAng().
 creatureTurningAng() -> 2 * (round(rand:uniform()) - 0.5) * (maxCreatureAng() / 2 * rand:uniform() + maxCreatureAng() / 2).
 creatureTurningTime() -> abs(math:pi() / maxW() + math:pi() / (2 * maxW()) * rand:normal()).
-creatureWaitTurn() -> abs(1 * rand:normal() + 2).
+creatureWaitTurn() -> abs(1 * rand:normal() + 1.5).
 minObstacles() -> 3.
 maxObstacles() -> 8.
 minObstacleSize() -> 1.5 * minSize().
@@ -168,7 +168,8 @@ obstacle_collisions([{K,U} | Us], [O | Os], Obstacles, Users, Flag) ->
 			V = mult(getV(U), -1), 
 			Dot = dot(V, mult(X1X2, 1 / (Norm*Norm + epsilon()))),
 			VF = add(V, mult(X1X2, Dot)), 
-			NewU = putV(VF, U),
+			{PV, _} = dict:fetch("v", U),
+			NewU = putV(VF, U, PV),
 			NewFlag = true;
 		_ -> 
 			NewFlag = (Norm < (USize + OSize)),
@@ -223,8 +224,9 @@ creature2creature ({K1,C1}, [{K2,C2} | Creatures], CreatureDict) ->
 			Dot = dot(V2V1, mult(X1X2, 1 / (Norm*Norm + epsilon()))),
 			VF1 = add(V1, mult(X1X2, Dot)),
 			VF2 = add(V2, mult(X2X1, Dot)), 
-			NCreatureDict = dict:store(K1, putV(VF1, C1), CreatureDict),
-			NewCreatureDict = dict:store(K2, putV(VF2, C2), NCreatureDict);
+			{{PV1,_}, {PV2,_}} = {dict:fetch("v", C1), dict:fetch("v", C2)},
+			NCreatureDict = dict:store(K1, putV(VF1, C1, PV1), CreatureDict),
+			NewCreatureDict = dict:store(K2, putV(VF2, C2, PV2), NCreatureDict);
 		_ -> NewCreatureDict = CreatureDict
 	end,
 	creature2creature ({K1,C1}, Creatures, NewCreatureDict).
@@ -253,10 +255,10 @@ getV (User) ->
 	Theta = dict:fetch("theta", User),
 	fromPolar({V, Theta}).
 
-putV (VC, User) ->
-	{V, Theta} = toPolar(VC),
+putV (VC, User, PV) ->
+	{_, Theta} = toPolar(VC),
 	{_, W} = dict:fetch("v", User),
-	NewUser = dict:store("v", {V,W}, User),
+	NewUser = dict:store("v", {PV,W}, User),
 	dict:store("theta", Theta, NewUser).
 
 getAgility (User) ->
