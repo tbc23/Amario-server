@@ -1,23 +1,26 @@
 -module(physics).
 -import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2]).
 -export([update_step/3,collision_handler/3,spawnCreatures/3]).
--export([timenow/0,epsilon/0,minV/0,screenRatio/0,minSize/0]).
+-export([timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0]).
 -export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
 -export([spawnPosition/3]).
 
 spawn_time() -> 5 .
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
-creatureV() -> maxV() * 3 .
+creatureV() -> maxV(minSize()) .
 minV() -> 1/10 . % 10s to fo from bottom to top of screen
-maxV() -> 1/2 . % 2s to go from bottom to top of screen
+maxV(Size) -> minSize() / (2 * Size) . % 1.5s to go from bottom to top of screen if minSize
 maxW() -> 2 * math:pi() / 1 .
 minW() -> -maxW() .
-minLinear() -> (maxV() - minV())/5 . % 5s to go from min speed to max speed
+minLinear() -> (maxV(minSize()) - minV())/5 . % 5s to go from min speed to max speed
 maxLinear() -> minLinear() * 2. % 2.5s to do the same as above line
 minAng() -> maxW() / 3. % 2s to go from no speed to max angular speed
 maxAng() -> minAng() * 2.
 minSize() -> 0.025 .
+maxSize() -> 3 * minSize().
+sizeDecrease() -> (maxSize() - minSize()) / 40.
+spawnSize() -> 1.5 * minSize().
 creatureSize() -> minSize() / 2.
 maxCreatures() -> 10.
 maxAgilityPoints() -> 5.
@@ -74,7 +77,7 @@ updateCreature (C, Time) ->
 			(A =/= 0) and (TimeElapsed < TurningTime) -> W + A * Time;
 			true -> 0
 		end,
-	{Type, UpV} = threshold(NewV, minV(), maxV()),
+	{Type, UpV} = threshold(NewV, minV(), maxV(dict:fetch("size", C))),
 	{_, UpW} = threshold(NewW, minW(), maxW()),
 	case Type of 
 		min -> 
@@ -96,6 +99,7 @@ updateUser(User, Time) ->
 	{L, A} = getAgility(User), 
 	{V, W} = dict:fetch("v", User),
 	{X, Y} = dict:fetch("pos", User),
+	Size = dict:fetch("size", User),
 	Theta = dict:fetch("theta", User),
 	{FW,FA,FD} = dict:fetch("fuel", User),
 	case L > 0 of
@@ -122,7 +126,7 @@ updateUser(User, Time) ->
 		end,
 	NewV = V + Linear * Time,
 	NewW = W + Ang * Time,
-	{Type, UpV} = threshold(NewV, minV(), maxV()),
+	{Type, UpV} = threshold(NewV, minV(), maxV(Size)),
 	{_, UpW} = threshold(NewW, minW(), maxW()),
 	case Type of 
 		min -> 
@@ -133,11 +137,13 @@ updateUser(User, Time) ->
 	NewT = Theta + W * Time,
 	NewX = X + V * math:cos(Theta) * Time,
 	NewY = Y + V * math:sin(Theta) * Time,
+	{_, NewSize} = threshold(Size - sizeDecrease() * Time, minSize(), maxSize()),
 	Up1 = dict:store("v", {UpV,UpW}, Up),
 	Up2 = dict:store("pos", {NewX, NewY}, Up1),
 	Up3 = dict:store("theta", NewT, Up2),
 	Up4 = dict:store("fuel", {NewFW,NewFA,NewFD}, Up3),
-	Up4 .
+	Up5 = dict:store("size", NewSize, Up4),
+	Up5 .
 
 collision_handler(Users, Creatures, Obstacles) ->
 	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
@@ -186,9 +192,9 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 			case Color of
 				"green" -> 
 					{_, NewPoints} = threshold(Points + 1, 0, maxAgilityPoints()),
-					NewSize = math:sqrt((UArea + CArea) / math:pi());
+					{_, NewSize} = threshold(math:sqrt((UArea + CArea) / math:pi()), minSize(), maxSize());
 				_ -> 
-					{_, NewPoints} = threshold(Points - 1, 0, maxAgilityPoints()),
+					{_, NewPoints} = threshold(Points - 2, 0, maxAgilityPoints()),
 					NewSize = Size
 			end,
 			NUser = dict:store("size", NewSize, U),

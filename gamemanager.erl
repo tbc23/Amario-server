@@ -1,6 +1,6 @@
 -module(gamemanager).
 -import(physics,[update_step/3,collision_handler/3,spawnCreatures/3,spawnPosition/3]).
--import(physics,[timenow/0,epsilon/0,minV/0,screenRatio/0,minSize/0]).
+-import(physics,[timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0]).
 -import(physics,[minLinear/0,minAng/0,minObstacles/0,maxObstacles/0,minObstacleSize/0,maxObstacleSize/0,gen_obstacles/2]).
 -export([start/1]).
 
@@ -107,7 +107,7 @@ user_handler(Users, Obstacles) ->
 			GenPos = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, Blobs, Blobs),
 			Pos = dict:store("pos", GenPos, Vel),
 			Fuel = dict:store("fuel", {1.0,1.0,1.0}, Pos),
-			SizeDict = dict:store("size", minSize(), Fuel),
+			SizeDict = dict:store("size", spawnSize(), Fuel),
 			Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
 			NewUser = dict:store("score", 0, Orientation),
 			NewUser1 = dict:store("agility", 0, NewUser),
