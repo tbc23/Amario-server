@@ -158,8 +158,23 @@ collision_handler(Users, Creatures, Obstacles) ->
 	{NUsers2, NCreatures2} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
 	NUsers3 = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
 	NewCreatures = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
-	NewUsers = user_user_collisions (dict:to_list(NUsers3), dict:to_list(NUsers3), NUsers3, Obstacles),
+	NUsers4 = user_user_collisions (dict:to_list(NUsers3), dict:to_list(NUsers3), NUsers3, Obstacles),
+	NewUsers = check_user_death(dict:to_list(NUsers4), NUsers4, dict:fetch_keys(NUsers4)),
 	{NewUsers, NewCreatures}.
+
+check_user_death ([], Users, _) -> Users;
+check_user_death ([{K,U} | Us], Users, Sockets) ->
+	Flag = dict:fetch("collision_flag", U),
+	Size = dict:fetch("size", U),
+	Name = dict:fetch("name", U),
+	case (Flag) and (Size =< minSize()) of
+		true -> 
+			[gen_tcp:send(S, list_to_binary(Name ++ " lost\n")) || S <- Sockets],
+			NewSockets = [S || S <- Sockets, S =/= K],
+			NewUsers = dict:erase(K, Users);
+		_ -> {NewUsers, NewSockets} = {Users, Sockets}
+	end,
+	check_user_death (Us, NewUsers, NewSockets).
 
 obstacle_collisions([], _, _, Users, _) -> dict:from_list(Users);
 obstacle_collisions([{K,U} | Us], [], Obstacles, Users, Flag) -> 
@@ -199,13 +214,15 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 			CArea = creatureSize() * creatureSize() * math:pi(),
 			case Color of
 				"green" -> 
-					{_, NewPoints} = threshold(Points + 1, 0, maxAgilityPoints()),
+					{_, NewPoints} = threshold(Points + 2, 0, maxAgilityPoints()),
+					Flag = false,
 					{_, NewSize} = threshold(math:sqrt((UArea + CArea) / math:pi()), minSize(), maxSize());
 				_ -> 
-					{_, NewPoints} = threshold(Points - 2, 0, maxAgilityPoints()),
+					{_, NewPoints} = threshold(Points - 1, 0, maxAgilityPoints()),
+					Flag = true,
 					NewSize = Size
 			end,
-			NUser = dict:store("size", NewSize, U),
+			NUser = dict:store("collision_flag", Flag, dict:store("size", NewSize, U)),
 			NewUser = dict:store("agility", NewPoints, NUser),
 			gamemanager ! {creature_died, KC},
 			NewCreatures = dict:erase(KC, Creatures);
@@ -233,23 +250,25 @@ user_user_collisions ([{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles) ->
 					NewPos2 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed), 
 					{NSize1, NSize2} = {math:sqrt(Size1*Size1 + Size2*Size2 / 2), Size2 / math:sqrt(2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
-					{{_, Points1}, {_, Points2}} = {threshold(dict:fetch("agility", U1)-1, 0, maxAgilityPoints()), maxAgilityPoints()},
+					{{_, Points1}, Points2} = {threshold(dict:fetch("agility", U1)-1, 0, maxAgilityPoints()), maxAgilityPoints()},
 					{Score1, Score2} = {dict:fetch("score", U1)+1, 0},
 					U2N1 = dict:store("pos", NewPos2, U2),
 					{U1N2, U2N2} = {dict:store("size", NewSize1, U1), dict:store("size", NewSize2, U2N1)},
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
-					{NewU1, NewU2} = {dict:store("score", Score1, U1N3), dict:store("score", Score2, U2N3)};
+					{U1N4, U2N4} = {U1N3, dict:store("collision_flag", true, U2N3)},
+					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)};
 				_ -> 
 					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K1],
 					NewPos1 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed),
 					{NSize1, NSize2} = {Size1 / math:sqrt(2), math:sqrt(Size2*Size2 + Size1*Size1 / 2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
-					{{_, Points1}, {_, Points2}} = {maxAgilityPoints(), threshold(dict:fetch("agility", U2)-1, 0, maxAgilityPoints())},
+					{Points1, {_, Points2}} = {maxAgilityPoints(), threshold(dict:fetch("agility", U2)-1, 0, maxAgilityPoints())},
 					{Score1, Score2} = {0, dict:fetch("score", U2)+1},
 					U1N1 = dict:store("pos", NewPos1, U1),
 					{U1N2, U2N2} = {dict:store("size", NewSize1, U1N1), dict:store("size", NewSize2, U2)},
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
-					{NewU1, NewU2} = {dict:store("score", Score1, U1N3), dict:store("score", Score2, U2N3)}
+					{U1N4, U2N4} = {dict:store("collision_flag", true, U1N3), U2N3},
+					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)}
 			end;
 		_ -> {NewU1, NewU2} = {U1, U2}
 	end,
