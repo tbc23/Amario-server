@@ -156,8 +156,9 @@ collision_handler(Users, Creatures, Obstacles) ->
 	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
 	NCreatures1 = creature_collision (NCreatures, dict:from_list(NCreatures)),
 	{NUsers2, NCreatures2} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
-	NewUsers = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
+	NUsers3 = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
 	NewCreatures = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
+	NewUsers = user_user_collisions (dict:to_list(NUsers3), dict:to_list(NUsers3), NUsers3, Obstacles),
 	{NewUsers, NewCreatures}.
 
 obstacle_collisions([], _, _, Users, _) -> dict:from_list(Users);
@@ -210,7 +211,50 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 			NewCreatures = dict:erase(KC, Creatures);
 		_ -> {NewUser, NewCreatures} = {U, Creatures}
 	end,
-	user_creature_collisions ([{KU,NewUser} | Us], Cs, Users, NewCreatures).
+	user_creature_collisions ([{KU,NewUser} | Us], Cs, Users, NewCreatures).  
+
+user_user_collisions ([], _, Users, _) -> Users;
+user_user_collisions ([_ | Us], [], Users, Obstacles) -> 
+	case length(Us) == 0 of
+		false -> [_ | T] = Us;
+		_ -> T = []
+	end,
+	user_user_collisions (Us, T, Users, Obstacles);
+user_user_collisions ([{K1,U1} | Us1], [{K2,_} | Us2], Users, Obstacles) when K1 == K2 -> 
+	user_user_collisions([{K1,U1} | Us1], Us2, Users, Obstacles);
+user_user_collisions ([{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles) ->
+	X1X2 = add(dict:fetch("pos", U1), mult(dict:fetch("pos", U2), -1)),
+	{Size1, Size2} = {dict:fetch("size", U1), dict:fetch("size", U2)},
+	case norm(X1X2) < (Size1 + Size2) of
+		true -> 
+			case Size1 > Size2 of
+				true -> 
+					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K2],
+					NewPos2 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed), 
+					{NSize1, NSize2} = {math:sqrt(Size1*Size1 + Size2*Size2 / 2), Size2 / math:sqrt(2)},
+					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
+					{{_, Points1}, {_, Points2}} = {threshold(dict:fetch("agility", U1)-1, 0, maxAgilityPoints()), maxAgilityPoints()},
+					{Score1, Score2} = {dict:fetch("score", U1)+1, 0},
+					U2N1 = dict:store("pos", NewPos2, U2),
+					{U1N2, U2N2} = {dict:store("size", NewSize1, U1), dict:store("size", NewSize2, U2N1)},
+					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
+					{NewU1, NewU2} = {dict:store("score", Score1, U1N3), dict:store("score", Score2, U2N3)};
+				_ -> 
+					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K1],
+					NewPos1 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed),
+					{NSize1, NSize2} = {Size1 / math:sqrt(2), math:sqrt(Size2*Size2 + Size1*Size1 / 2)},
+					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
+					{{_, Points1}, {_, Points2}} = {maxAgilityPoints(), threshold(dict:fetch("agility", U2)-1, 0, maxAgilityPoints())},
+					{Score1, Score2} = {0, dict:fetch("score", U2)+1},
+					U1N1 = dict:store("pos", NewPos1, U1),
+					{U1N2, U2N2} = {dict:store("size", NewSize1, U1N1), dict:store("size", NewSize2, U2)},
+					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
+					{NewU1, NewU2} = {dict:store("score", Score1, U1N3), dict:store("score", Score2, U2N3)}
+			end;
+		_ -> {NewU1, NewU2} = {U1, U2}
+	end,
+	NewUsers = dict:store(K2, NewU2, dict:store(K1, NewU1, Users)),
+	user_user_collisions ([{K1,NewU1} | Us1], Us2, NewUsers, Obstacles).
 
 creature_collision ([], Creatures) -> Creatures;
 creature_collision ([C | Cs], Creatures) ->
