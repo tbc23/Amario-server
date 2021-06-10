@@ -1,5 +1,5 @@
 -module(gamemanager).
--import(physics,[update_step/3,collision_handler/3,spawnCreatures/3,spawnPosition/3]).
+-import(physics,[update_step/3,collision_handler/4,spawnCreatures/3,spawnPosition/3]).
 -import(physics,[timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0]).
 -import(physics,[minLinear/0,minAng/0,minObstacles/0,maxObstacles/0,minObstacleSize/0,maxObstacleSize/0,gen_obstacles/2]).
 -export([start/1]).
@@ -54,7 +54,7 @@ game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime) ->
 	TimeStep = (NewTime - Time) / 1000,
 	{NewSpawnTime, SCreatures} = spawnCreatures(SpawnTime + TimeStep, Creatures, Obstacles),
 	{UpUsers, UpCreatures} = update_step(NewUsers, SCreatures, TimeStep),
-	{ColUsers, ColCreatures} = collision_handler(UpUsers, UpCreatures, Obstacles),
+	{ColUsers, ColCreatures} = collision_handler(LMPid, UpUsers, UpCreatures, Obstacles),
 	updateClient(ColUsers, ColCreatures),
 	FPS = 1 / (epsilon() + TimeStep),
 	case FPS < 60 of 

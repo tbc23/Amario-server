@@ -167,5 +167,8 @@ loop (Users) ->
 					gamemanager ! {wrong_authentication, Sock, loginmanager},
 					loop (Users)
 			end;
+		{update_score, Name, Score} ->
+			{Pass, Flag, HScore} = dict:fetch(Name, Users),
+			loop (dict:store(Name, {Pass, Flag, HScore+Score}, Users));
 		{stop, From} -> From ! {ok, loginmanager}
 	end.

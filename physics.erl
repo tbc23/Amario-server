@@ -1,6 +1,6 @@
 -module(physics).
 -import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2]).
--export([update_step/3,collision_handler/3,spawnCreatures/3]).
+-export([update_step/3,collision_handler/4,spawnCreatures/3]).
 -export([timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0]).
 -export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
 -export([spawnPosition/3]).
@@ -151,14 +151,14 @@ updateUser(User, Time) ->
 	Up6 = dict:store("a", {NewL, NAng}, Up5),
 	Up6 .
 
-collision_handler(Users, Creatures, Obstacles) ->
+collision_handler(LMPid, Users, Creatures, Obstacles) ->
 	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
 	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
 	NCreatures1 = creature_collision (NCreatures, dict:from_list(NCreatures)),
 	{NUsers2, NCreatures2} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
 	NUsers3 = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
 	NewCreatures = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
-	NUsers4 = user_user_collisions (dict:to_list(NUsers3), dict:to_list(NUsers3), NUsers3, Obstacles),
+	NUsers4 = user_user_collisions (LMPid, dict:to_list(NUsers3), dict:to_list(NUsers3), NUsers3, Obstacles),
 	NewUsers = check_user_death(dict:to_list(NUsers4), NUsers4, dict:fetch_keys(NUsers4)),
 	{NewUsers, NewCreatures}.
 
@@ -230,16 +230,16 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 	end,
 	user_creature_collisions ([{KU,NewUser} | Us], Cs, Users, NewCreatures).  
 
-user_user_collisions ([], _, Users, _) -> Users;
-user_user_collisions ([_ | Us], [], Users, Obstacles) -> 
+user_user_collisions (_, [], _, Users, _) -> Users;
+user_user_collisions (LMPid, [_ | Us], [], Users, Obstacles) -> 
 	case length(Us) == 0 of
 		false -> [_ | T] = Us;
 		_ -> T = []
 	end,
-	user_user_collisions (Us, T, Users, Obstacles);
-user_user_collisions ([{K1,U1} | Us1], [{K2,_} | Us2], Users, Obstacles) when K1 == K2 -> 
-	user_user_collisions([{K1,U1} | Us1], Us2, Users, Obstacles);
-user_user_collisions ([{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles) ->
+	user_user_collisions (LMPid, Us, T, Users, Obstacles);
+user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,_} | Us2], Users, Obstacles) when K1 == K2 -> 
+	user_user_collisions(LMPid, [{K1,U1} | Us1], Us2, Users, Obstacles);
+user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles) ->
 	X1X2 = add(dict:fetch("pos", U1), mult(dict:fetch("pos", U2), -1)),
 	{Size1, Size2} = {dict:fetch("size", U1), dict:fetch("size", U2)},
 	case norm(X1X2) < (Size1 + Size2) of
@@ -269,11 +269,13 @@ user_user_collisions ([{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles) ->
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
 					{U1N4, U2N4} = {dict:store("collision_flag", true, U1N3), U2N3},
 					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)}
-			end;
+			end,
+			LMPid ! {update_score, dict:fetch("name", U1), Score1},
+			LMPid ! {update_score, dict:fetch("name", U2), Score2};
 		_ -> {NewU1, NewU2} = {U1, U2}
 	end,
 	NewUsers = dict:store(K2, NewU2, dict:store(K1, NewU1, Users)),
-	user_user_collisions ([{K1,NewU1} | Us1], Us2, NewUsers, Obstacles).
+	user_user_collisions (LMPid, [{K1,NewU1} | Us1], Us2, NewUsers, Obstacles).
 
 creature_collision ([], Creatures) -> Creatures;
 creature_collision ([C | Cs], Creatures) ->
