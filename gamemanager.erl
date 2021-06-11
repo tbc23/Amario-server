@@ -5,13 +5,14 @@
 -export([start/1]).
 
 timeout() -> 0 .
+queueMax() -> 3 .
 
 start (Port) ->
 	LMPid = whereis(loginmanager),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
 	NumObstacles = round(minObstacles() + (maxObstacles() - minObstacles()) * rand:uniform()),
 	Obstacles = gen_obstacles([], NumObstacles),
-	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), Obstacles, timenow(), 0) end)),
+	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), Obstacles, timenow(), 0, []) end)),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
 	receive stop -> ok end.
 
@@ -48,8 +49,8 @@ parse_requests (LMPid, Sock) ->
 			gen_tcp:closed(Sock)
 	end.
 
-game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime) ->
-	NewUsers = user_handler(Users, Obstacles),
+game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime, Queue) ->
+	{NewQueue, NewUsers} = user_handler(Users, Obstacles, Queue),
 	NewTime = timenow(),
 	TimeStep = (NewTime - Time) / 1000,
 	{NewSpawnTime, SCreatures} = spawnCreatures(SpawnTime + TimeStep, Creatures, Obstacles),
@@ -61,7 +62,7 @@ game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime) ->
 		true -> io:format("~p~n",[FPS]);
 		_ -> FPS2 = 0
 	end,
-	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime, NewSpawnTime).
+	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime, NewSpawnTime, NewQueue).
 	
 updateClient(Users, Creatures) ->
 	NumUsers = integer_to_list(dict:size(Users)),
@@ -96,79 +97,105 @@ sendObstacle(Obstacle, Sock) ->
 	Send = float_to_list(X) ++ " " ++ float_to_list(Y) ++ " " ++ float_to_list(Size) ++ "\n",
 	gen_tcp:send(Sock, list_to_binary(Send)).
 
-user_handler(Users, Obstacles) ->
+createPlayer(User, Users, Obstacles) ->
+	Player = dict:store("name", User, dict:new()),
+	Accel = dict:store("a", {0,0} , Player),
+	Vel = dict:store("v", {minV(), 0}, Accel),
+	Blobs = [U || {_,U} <- dict:to_list(Users)] ++ Obstacles,
+	GenPos = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, Blobs, Blobs),
+	Pos = dict:store("pos", GenPos, Vel),
+	Fuel = dict:store("fuel", {1.0,1.0,1.0}, Pos),
+	SizeDict = dict:store("size", spawnSize(), Fuel),
+	Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
+	NewUser = dict:store("score", 0, Orientation),
+	NewUser1 = dict:store("agility", 0, NewUser),
+	NewUser2 = dict:store("collision_flag", false, NewUser1),
+	NewUser2.
+
+eraseQueue (_, QH, []) -> QH;
+eraseQueue (Sock, QH, [{S,U} | Qs]) ->
+	case Sock == S of
+		true -> 
+			Result = QH ++ Qs,
+			eraseQueue (Sock, Result, []);
+		_ -> 
+			Result = QH ++ [{S,U}],
+			eraseQueue (Sock, Result, Qs)
+	end.
+
+user_handler(Users, Obstacles, Queue) ->
 	Size = dict:size(Users), 
+	QMax = queueMax(),
 	receive
 		{ok, User, Sock, loginmanager} when Size < 3 ->
-			Player = dict:store("name", User, dict:new()),
-			Accel = dict:store("a", {0,0} , Player),
-			Vel = dict:store("v", {minV(), 0}, Accel),
-			Blobs = [U || {_,U} <- dict:to_list(Users)] ++ Obstacles,
-			GenPos = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, Blobs, Blobs),
-			Pos = dict:store("pos", GenPos, Vel),
-			Fuel = dict:store("fuel", {1.0,1.0,1.0}, Pos),
-			SizeDict = dict:store("size", spawnSize(), Fuel),
-			Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
-			NewUser = dict:store("score", 0, Orientation),
-			NewUser1 = dict:store("agility", 0, NewUser),
-			NewUser2 = dict:store("collision_flag", false, NewUser1),
-			Result = dict:store(Sock, NewUser2, Users),
+			NewUser = createPlayer(User, Users, Obstacles),
+			Result = {Queue, dict:store(Sock, NewUser, Users)},
 			io:format("USER ADDED~n"),
 			gen_tcp:send(Sock, list_to_binary("user added\n")),
 			gen_tcp:send(Sock, list_to_binary("obstacles " ++ integer_to_list(length(Obstacles)) ++ "\n")),
 			[sendObstacle (O, Sock) || O <- Obstacles];
-		{ok, _, Sock, loginmanager} -> 
+		{ok, _, Sock, loginmanager} when length(Queue) >= QMax -> 
 			gen_tcp:send(Sock, list_to_binary("game full\n")),
-			Result = Users;
+			Result = {Queue, Users};
+		{ok, User, Sock, loginmanager} ->
+			gen_tcp:send(Sock, list_to_binary("added to queue\n")),
+			Result = {Queue ++ [{Sock,User}], Users};
 		{_, Sock, loginmanager} ->
 			gen_tcp:send(Sock, list_to_binary("wrong authentication\n")),
-			Result = Users;
+			Result = {Queue, Users};
 		{user_left, Sock, LMPid} ->
 			case dict:is_key(Sock, Users) of
 				true ->
+					case length(Queue) > 0 of
+						true -> 
+							[{HSock, HUser} | NewQueue] = Queue,
+							gamemanager ! {ok, HUser, HSock, loginmanager};
+						_ -> NewQueue = Queue
+					end,
 					io:format("User removed~n"),
 					User = dict:fetch(Sock, Users),
 					Name = dict:fetch("name", User),
-					Result = dict:erase(Sock, Users),
+					Result = {NewQueue, dict:erase(Sock, Users)},
 					[gen_tcp:send(S, list_to_binary(Name ++ " left\n")) || {S, _} <- dict:to_list(Users)],
 					LMPid ! {{logout, Name, "pass"}, gamemanager};
 				_ ->
-					Result = Users
+					NewQueue = eraseQueue(Sock, [], Queue),
+					Result = {NewQueue, Users}
 			end;
 		{creature_died, Name} ->
-			Result = Users,
+			Result = {Queue, Users},
 			[gen_tcp:send(S, list_to_binary(Name ++ " died\n")) || {S, _} <- dict:to_list(Users)];
 		{press, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{minLinear(), Ang}, User), Users);
+			Result = {Queue, dict:store(Sock,dict:store("a",{minLinear(), Ang}, User), Users)};
 		{press, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, Ang-minAng()}, User), Users);
+			Result = {Queue, dict:store(Sock,dict:store("a",{Linear, Ang-minAng()}, User), Users)};
 		{press, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{Linear, Ang+minAng()}, User), Users);
+			Result = {Queue, dict:store(Sock,dict:store("a",{Linear, Ang+minAng()}, User), Users)};
 		{release, "w", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{_, Ang} = dict:fetch("a", User),
-			Result = dict:store(Sock,dict:store("a",{-minLinear(), Ang}, User), Users);
+			Result = {Queue, dict:store(Sock,dict:store("a",{-minLinear(), Ang}, User), Users)};
 		{release, "a", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
 			{V, _} = dict:fetch("v", User),
 			NewAng = Ang + minAng(),
 			NewUser = dict:store("v", {V, 0}, User),
-			Result = dict:store(Sock, dict:store("a", {Linear, NewAng}, NewUser), Users);
+			Result = {Queue, dict:store(Sock, dict:store("a", {Linear, NewAng}, NewUser), Users)};
 		{release, "d", Sock} ->
 			User = dict:fetch(Sock, Users),
 			{Linear, Ang} = dict:fetch("a", User),
 			{V, _} = dict:fetch("v", User),
 			NewAng = Ang - minAng(),
 			NewUser = dict:store("v", {V, 0}, User),
-			Result  = dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users);
-		_ -> Result = Users
-	after timeout() -> Result = Users 
+			Result  = {Queue, dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users)};
+		_ -> Result = {Queue, Users}
+	after timeout() -> Result = {Queue, Users} 
 	end,
 	Result .

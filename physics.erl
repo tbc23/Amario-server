@@ -246,6 +246,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 		true -> 
 			case Size1 > Size2 of
 				true -> 
+					io:format("Colliding~n"),
 					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K2],
 					NewPos2 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed), 
 					{NSize1, NSize2} = {math:sqrt(Size1*Size1 + Size2*Size2 / 2), Size2 / math:sqrt(2)},
@@ -255,8 +256,11 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 					U2N1 = dict:store("pos", NewPos2, U2),
 					{U1N2, U2N2} = {dict:store("size", NewSize1, U1), dict:store("size", NewSize2, U2N1)},
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
-					{NewU1, NewU2} = {dict:store("score", Score1, U1N3), dict:store("score", Score2, U2N3)};
+					%{U1N4, U2N4} = {U1N3, dict:store("collision_flag", true, U2N3)},
+					{U1N4,U2N4} = {U1N3, U2N3},
+					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)};
 				_ -> 
+					io:format("Colliding~n"),
 					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K1],
 					NewPos1 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed),
 					{NSize1, NSize2} = {Size1 / math:sqrt(2), math:sqrt(Size2*Size2 + Size1*Size1 / 2)},
@@ -266,7 +270,9 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 					U1N1 = dict:store("pos", NewPos1, U1),
 					{U1N2, U2N2} = {dict:store("size", NewSize1, U1N1), dict:store("size", NewSize2, U2)},
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
-					{NewU1, NewU2} = {dict:store("score", Score1, U1N3), dict:store("score", Score2, U2N3)}
+					%{U1N4, U2N4} = {dict:store("collision_flag", true, U1N3), U2N3},
+					{U1N4, U2N4} = {U1N3,U2N3},
+					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)}
 			end,
 			LMPid ! {update_score, dict:fetch("name", U1), Score1},
 			LMPid ! {update_score, dict:fetch("name", U2), Score2};
