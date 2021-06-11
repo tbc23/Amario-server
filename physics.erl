@@ -152,13 +152,13 @@ updateUser(User, Time) ->
 	Up6 .
 
 collision_handler(LMPid, Users, Creatures, Obstacles) ->
-	NUsers = [{K, wall_collision(U)}|| {K, U} <- dict:to_list(Users)],
-	NCreatures = [{K, wall_collision(C)} || {K, C} <- dict:to_list(Creatures)],
-	NCreatures1 = creature_collision (NCreatures, dict:from_list(NCreatures)),
-	{NUsers2, NCreatures2} = user_creature_collisions (NUsers, dict:to_list(NCreatures1), dict:from_list(NUsers), NCreatures1),
+	NCreatures1 = creature_collision (dict:to_list(Creatures), Creatures),
+	{NUsers2, NCreatures2} = user_creature_collisions (dict:to_list(Users), dict:to_list(NCreatures1), Users, NCreatures1),
 	NUsers3 = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
-	NewCreatures = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
-	NUsers4 = user_user_collisions (LMPid, dict:to_list(NUsers3), dict:to_list(NUsers3), NUsers3, Obstacles),
+	NCreatures3 = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
+	NUsers = dict:from_list([{K, wall_collision(U)}|| {K, U} <- dict:to_list(NUsers3)]),
+	NewCreatures = dict:from_list([{K, wall_collision(C)} || {K, C} <- dict:to_list(NCreatures3)]),
+	NUsers4 = user_user_collisions (LMPid, dict:to_list(NUsers), dict:to_list(NUsers), NUsers, Obstacles),
 	NewUsers = check_user_death(dict:to_list(NUsers4), NUsers4, dict:fetch_keys(NUsers4)),
 	{NewUsers, NewCreatures}.
 
@@ -318,7 +318,12 @@ wall_collision (User) ->
 			(CL or CR) -> math:pi() - Theta;
 		   	true -> Theta	
 		end,
-	NewUser = dict:store("theta", NewTheta, User),
+	Flag = 
+		if 
+			CU or CD or CR or CL -> true;
+			true -> dict:fetch("collision_flag", User)
+		end,
+	NewUser = dict:store("collision_flag", Flag, dict:store("theta", NewTheta, User)),
 	NewUser.
 
 getV (User) -> 

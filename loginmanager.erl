@@ -135,10 +135,10 @@ loop (Users) ->
 				error -> 
 					From ! {user_not_found, loginmanager},
 					loop (Users);
-				{ok, {Pass, true, HScore}} ->
+				{ok, {Upass, true, HScore}} ->
 					From ! {ok, loginmanager},
-					loop (dict:store(User, {Pass, false, HScore}, Users));
-				{ok, {Pass, false, _}} ->
+					loop (dict:store(User, {Upass, false, HScore}, Users));
+				{ok, {_, false, _}} ->
 					From ! {user_not_online, loginmanager},
 					loop (Users);
 				_ -> 

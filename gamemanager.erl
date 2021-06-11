@@ -41,10 +41,10 @@ parse_requests (LMPid, Sock) ->
 			end,
 			parse_requests (LMPid, Sock);
 		{tcp_closed, _} ->
-			gamemanager ! {user_left, Sock},   
+			gamemanager ! {user_left, Sock, LMPid},   
 			gen_tcp:close(Sock);
 		{tcp_error, _, _} ->
-			gamemanager ! {user_left, Sock},   
+			gamemanager ! {user_left, Sock, LMPid},   
 			gen_tcp:closed(Sock)
 	end.
 
@@ -123,14 +123,15 @@ user_handler(Users, Obstacles) ->
 		{_, Sock, loginmanager} ->
 			gen_tcp:send(Sock, list_to_binary("wrong authentication\n")),
 			Result = Users;
-		{user_left, Sock} ->
+		{user_left, Sock, LMPid} ->
 			case dict:is_key(Sock, Users) of
 				true ->
 					io:format("User removed~n"),
 					User = dict:fetch(Sock, Users),
 					Name = dict:fetch("name", User),
 					Result = dict:erase(Sock, Users),
-					[gen_tcp:send(S, list_to_binary(Name ++ " left\n")) || {S, _} <- dict:to_list(Users)];
+					[gen_tcp:send(S, list_to_binary(Name ++ " left\n")) || {S, _} <- dict:to_list(Users)],
+					LMPid ! {{logout, Name, "pass"}, gamemanager};
 				_ ->
 					Result = Users
 			end;
