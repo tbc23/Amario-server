@@ -22,7 +22,7 @@ minSize() -> 0.025 .
 maxSize() -> 3 * minSize().
 sizeDecrease() -> (maxSize() - minSize()) / 120.
 spawnSize() -> 1.5 * minSize().
-creatureSize() -> minSize() / 2.
+creatureSize() -> minSize() / 1.25.
 maxCreatures() -> 10.
 maxAgilityPoints() -> 5.
 fuelBurnW() -> 1 / (maxLinear() * 4). % 4s to burn at max acceleration 

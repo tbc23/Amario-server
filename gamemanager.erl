@@ -89,8 +89,9 @@ sendCreature(Name, C, Sockets) ->
 	{X, Y} = dict:fetch("pos", C),
 	Color = dict:fetch("color", C),
 	UD1 = Name ++ " " ++ Color ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
-	UD2 = UD1 ++ " " ++ float_to_list(dict:fetch("size", C)) ++ "\n",
-	[gen_tcp:send(S, list_to_binary(UD2)) || S <- Sockets].
+	UD2 = UD1 ++ " " ++ float_to_list(dict:fetch("size", C)),
+	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("theta", C)) ++ "\n",
+	[gen_tcp:send(S, list_to_binary(UD3)) || S <- Sockets].
 
 sendObstacle(Obstacle, Sock) ->
 	{X,Y} = dict:fetch("pos", Obstacle),
