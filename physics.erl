@@ -158,23 +158,19 @@ collision_handler(LMPid, Users, Creatures, Obstacles) ->
 	NCreatures3 = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
 	NUsers = dict:from_list([{K, wall_collision(U)}|| {K, U} <- dict:to_list(NUsers3)]),
 	NewCreatures = dict:from_list([{K, wall_collision(C)} || {K, C} <- dict:to_list(NCreatures3)]),
-	NUsers4 = user_user_collisions (LMPid, dict:to_list(NUsers), dict:to_list(NUsers), NUsers, Obstacles),
-	NewUsers = check_user_death(dict:to_list(NUsers4), NUsers4, dict:fetch_keys(NUsers4)),
+	NewUsers = user_user_collisions (LMPid, dict:to_list(NUsers), dict:to_list(NUsers), NUsers, Obstacles),
+	check_user_death(LMPid, dict:to_list(NewUsers)),
 	{NewUsers, NewCreatures}.
 
-check_user_death ([], Users, _) -> Users;
-check_user_death ([{K,U} | Us], Users, Sockets) ->
+check_user_death (_, []) -> ok;
+check_user_death (LMPid, [{K,U} | Us]) ->
 	Flag = dict:fetch("collision_flag", U),
 	Size = dict:fetch("size", U),
-	Name = dict:fetch("name", U),
 	case (Flag) and (Size =< minSize()) of
-		true -> 
-			[gen_tcp:send(S, list_to_binary(Name ++ " lost\n")) || S <- Sockets],
-			NewSockets = [S || S <- Sockets, S =/= K],
-			NewUsers = dict:erase(K, Users);
-		_ -> {NewUsers, NewSockets} = {Users, Sockets}
+		true -> gamemanager ! {user_left, K, LMPid, "lost"}; 
+		_ -> ok 
 	end,
-	check_user_death (Us, NewUsers, NewSockets).
+	check_user_death (LMPid, Us).
 
 obstacle_collisions([], _, _, Users, _) -> dict:from_list(Users);
 obstacle_collisions([{K,U} | Us], [], Obstacles, Users, Flag) -> 

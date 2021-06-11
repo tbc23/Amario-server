@@ -42,10 +42,10 @@ parse_requests (LMPid, Sock) ->
 			end,
 			parse_requests (LMPid, Sock);
 		{tcp_closed, _} ->
-			gamemanager ! {user_left, Sock, LMPid},   
+			gamemanager ! {user_left, Sock, LMPid, "left"},   
 			gen_tcp:close(Sock);
 		{tcp_error, _, _} ->
-			gamemanager ! {user_left, Sock, LMPid},   
+			gamemanager ! {user_left, Sock, LMPid, "left"},   
 			gen_tcp:closed(Sock)
 	end.
 
@@ -57,13 +57,14 @@ game (LMPid, Users, Creatures, Obstacles, Time, SpawnTime, Queue) ->
 	{UpUsers, UpCreatures} = update_step(NewUsers, SCreatures, TimeStep),
 	{ColUsers, ColCreatures} = collision_handler(LMPid, UpUsers, UpCreatures, Obstacles),
 	updateClient(ColUsers, ColCreatures),
-	FPS = 1 / (epsilon() + TimeStep),
-	case FPS < 60 of 
-		true -> io:format("~p~n",[FPS]);
-		_ -> FPS2 = 0
-	end,
+	updateQueue(Queue, 1),
 	game(LMPid, ColUsers, ColCreatures, Obstacles, NewTime, NewSpawnTime, NewQueue).
-	
+
+updateQueue ([], _) -> ok;
+updateQueue ([{Sock,_} | Socks], Counter) ->
+	gen_tcp:send(Sock, list_to_binary(integer_to_list(Counter) ++ " ahead\n")),
+	updateQueue(Socks, Counter+1).
+
 updateClient(Users, Creatures) ->
 	NumUsers = integer_to_list(dict:size(Users)),
 	NumCreatures = integer_to_list(dict:size(Creatures)),
@@ -143,7 +144,7 @@ user_handler(Users, Obstacles, Queue) ->
 		{_, Sock, loginmanager} ->
 			gen_tcp:send(Sock, list_to_binary("wrong authentication\n")),
 			Result = {Queue, Users};
-		{user_left, Sock, LMPid} ->
+		{user_left, Sock, LMPid, Option} ->
 			case dict:is_key(Sock, Users) of
 				true ->
 					case length(Queue) > 0 of
@@ -156,7 +157,7 @@ user_handler(Users, Obstacles, Queue) ->
 					User = dict:fetch(Sock, Users),
 					Name = dict:fetch("name", User),
 					Result = {NewQueue, dict:erase(Sock, Users)},
-					[gen_tcp:send(S, list_to_binary(Name ++ " left\n")) || {S, _} <- dict:to_list(Users)],
+					[gen_tcp:send(S, list_to_binary(Name ++ " " ++ Option ++ "\n")) || {S, _} <- dict:to_list(Users)],
 					LMPid ! {{logout, Name, "pass"}, gamemanager};
 				_ ->
 					NewQueue = eraseQueue(Sock, [], Queue),
