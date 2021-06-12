@@ -153,8 +153,8 @@ updateUser(User, Time) ->
 
 collision_handler(LMPid, Users, Creatures, Obstacles) ->
 	NCreatures1 = creature_collision (dict:to_list(Creatures), Creatures),
-	{NUsers2, NCreatures2} = user_creature_collisions (dict:to_list(Users), dict:to_list(NCreatures1), Users, NCreatures1),
-	NUsers3 = obstacle_collisions (dict:to_list(NUsers2), Obstacles, Obstacles, [], false),
+	NUsers2 = obstacle_collisions (dict:to_list(Users), Obstacles, Obstacles, [], false),
+	{NUsers3, NCreatures2} = user_creature_collisions (dict:to_list(NUsers2), dict:to_list(NCreatures1), NUsers2, NCreatures1),
 	NCreatures3 = obstacle_collisions (dict:to_list(NCreatures2), Obstacles, Obstacles, [], false),
 	NUsers = dict:from_list([{K, wall_collision(U)}|| {K, U} <- dict:to_list(NUsers3)]),
 	NewCreatures = dict:from_list([{K, wall_collision(C)} || {K, C} <- dict:to_list(NCreatures3)]),
@@ -228,11 +228,11 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 
 user_user_collisions (_, [], _, Users, _) -> Users;
 user_user_collisions (LMPid, [_ | Us], [], Users, Obstacles) -> 
-	case length(Us) == 0 of
-		false -> [_ | T] = Us;
-		_ -> T = []
-	end,
-	user_user_collisions (LMPid, Us, T, Users, Obstacles);
+	%case length(Us) == 0 of
+	%	false -> [_ | T] = Us;
+	%	_ -> T = []
+	%end,
+	user_user_collisions (LMPid, Us, dict:to_list(Users), Users, Obstacles);
 user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,_} | Us2], Users, Obstacles) when K1 == K2 -> 
 	user_user_collisions(LMPid, [{K1,U1} | Us1], Us2, Users, Obstacles);
 user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles) ->
@@ -243,7 +243,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 			case Size1 > Size2 of
 				true -> 
 					io:format("Colliding~n"),
-					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K2],
+					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users)],
 					NewPos2 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed), 
 					{NSize1, NSize2} = {math:sqrt(Size1*Size1 + Size2*Size2 / 2), Size2 / math:sqrt(2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
@@ -257,7 +257,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)};
 				_ -> 
 					io:format("Colliding~n"),
-					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users), K =/= K1],
+					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users)],
 					NewPos1 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed),
 					{NSize1, NSize2} = {Size1 / math:sqrt(2), math:sqrt(Size2*Size2 + Size1*Size1 / 2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
