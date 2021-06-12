@@ -98,7 +98,7 @@ loop (Users) ->
 			case dict:find(User, Users) of
 				error -> 
 					From ! {ok, loginmanager},
-					loop (dict:store(User, {Pass, false, 0}, Users));
+					loop (dict:store(User, {Pass, false, 0.0}, Users));
 				_ ->
 					From ! {user_exists, loginmanager},
 					loop (Users)
@@ -152,7 +152,7 @@ loop (Users) ->
 			F = fun({_, A2}, {_, B2}) -> A2 =< B2 end,
 			L = [{User, Score} || {User, {_, _, Score}} <- dict:to_list(Users)],
 			{Board, _} = lists:split(min(Num, length(L)), lists:sort(F, L)),
-			StrBoard = [User ++ " " ++ integer_to_list(Score) ++ "," || {User, Score} <- Board],
+			StrBoard = [User ++ " " ++ float_to_list(Score) ++ "," || {User, Score} <- Board],
 			From ! {StrBoard, loginmanager},
 			loop (Users);
 		{{check, User, Pass}, Sock, gamemanager} ->

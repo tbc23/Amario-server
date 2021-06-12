@@ -80,7 +80,7 @@ sendUser (User, Sockets) ->
 	UD2 = UD1 ++ " " ++ float_to_list(X) ++ " " ++ float_to_list(Y),
 	UD3 = UD2 ++ " " ++ float_to_list(dict:fetch("theta", User)), 
 	UD4 = UD3 ++ " " ++ float_to_list(dict:fetch("size", User)),
-	UD5 = UD4 ++ " " ++ integer_to_list(dict:fetch("score", User)),
+	UD5 = UD4 ++ " " ++ float_to_list(dict:fetch("score", User)),
 	UD6 = UD5 ++ " " ++ float_to_list(FW) ++ " " ++ float_to_list(FA),
 	UD7 = UD6 ++ " " ++ float_to_list(FD) ++ "\n",
 	[gen_tcp:send(S, list_to_binary(UD7)) || S <- Sockets ].
@@ -109,9 +109,9 @@ createPlayer(User, Users, Obstacles) ->
 	Fuel = dict:store("fuel", {1.0,1.0,1.0}, Pos),
 	SizeDict = dict:store("size", spawnSize(), Fuel),
 	Orientation = dict:store("theta", 2*math:pi()*rand:uniform(), SizeDict),
-	NewUser = dict:store("score", 0, Orientation),
+	NewUser = dict:store("score", 0.0, Orientation),
 	NewUser1 = dict:store("agility", 0, NewUser),
-	NewUser2 = dict:store("collision_flag", false, NewUser1),
+	NewUser2 = dict:store("death_flag", false, dict:store("collision_flag", false, NewUser1)),
 	NewUser2.
 
 eraseQueue (_, QH, []) -> QH;
@@ -168,35 +168,59 @@ user_handler(Users, Obstacles, Queue) ->
 			Result = {Queue, Users},
 			[gen_tcp:send(S, list_to_binary(Name ++ " died\n")) || {S, _} <- dict:to_list(Users)];
 		{press, "w", Sock} ->
-			User = dict:fetch(Sock, Users),
-			{_, Ang} = dict:fetch("a", User),
-			Result = {Queue, dict:store(Sock,dict:store("a",{minLinear(), Ang}, User), Users)};
-		{press, "a", Sock} ->
-			User = dict:fetch(Sock, Users),
-			{Linear, Ang} = dict:fetch("a", User),
-			Result = {Queue, dict:store(Sock,dict:store("a",{Linear, Ang-minAng()}, User), Users)};
-		{press, "d", Sock} ->
-			User = dict:fetch(Sock, Users),
-			{Linear, Ang} = dict:fetch("a", User),
-			Result = {Queue, dict:store(Sock,dict:store("a",{Linear, Ang+minAng()}, User), Users)};
-		{release, "w", Sock} ->
-			User = dict:fetch(Sock, Users),
-			{_, Ang} = dict:fetch("a", User),
-			Result = {Queue, dict:store(Sock,dict:store("a",{-minLinear(), Ang}, User), Users)};
-		{release, "a", Sock} ->
-			User = dict:fetch(Sock, Users),
-			{Linear, Ang} = dict:fetch("a", User),
-			{V, _} = dict:fetch("v", User),
-			NewAng = Ang + minAng(),
-			NewUser = dict:store("v", {V, 0}, User),
-			Result = {Queue, dict:store(Sock, dict:store("a", {Linear, NewAng}, NewUser), Users)};
-		{release, "d", Sock} ->
-			User = dict:fetch(Sock, Users),
-			{Linear, Ang} = dict:fetch("a", User),
-			{V, _} = dict:fetch("v", User),
-			NewAng = Ang - minAng(),
-			NewUser = dict:store("v", {V, 0}, User),
-			Result  = {Queue, dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users)};
+			case dict:is_key(Sock, Users) of 
+				true ->
+					User = dict:fetch(Sock, Users),
+					{_, Ang} = dict:fetch("a", User),
+					Result = {Queue, dict:store(Sock,dict:store("a",{minLinear(), Ang}, User), Users)};
+				_ -> Result = {Queue, Users}
+			end;
+		{press, "a", Sock} -> 
+			case dict:is_key(Sock, Users) of 
+				true -> 
+					User = dict:fetch(Sock, Users),
+					{Linear, Ang} = dict:fetch("a", User),
+					Result = {Queue, dict:store(Sock,dict:store("a",{Linear, Ang-minAng()}, User), Users)};
+				_ -> Result = {Queue, Users}
+			end;
+		{press, "d", Sock} ->  
+			case dict:is_key(Sock, Users) of
+				true ->
+					User = dict:fetch(Sock, Users),
+					{Linear, Ang} = dict:fetch("a", User),
+					Result = {Queue, dict:store(Sock,dict:store("a",{Linear, Ang+minAng()}, User), Users)};
+				_ -> Result = {Queue, Users}
+			end;
+		{release, "w", Sock} ->  
+			case dict:is_key(Sock, Users) of
+				true ->
+					User = dict:fetch(Sock, Users),
+					{_, Ang} = dict:fetch("a", User),
+					Result = {Queue, dict:store(Sock,dict:store("a",{-minLinear(), Ang}, User), Users)};
+				_ -> Result = {Queue, Users}
+			end;
+		{release, "a", Sock} -> 
+			case dict:is_key(Sock, Users) of
+				true ->
+					User = dict:fetch(Sock, Users),
+					{Linear, Ang} = dict:fetch("a", User),
+					{V, _} = dict:fetch("v", User),
+					NewAng = Ang + minAng(),
+					NewUser = dict:store("v", {V, 0}, User),
+					Result = {Queue, dict:store(Sock, dict:store("a", {Linear, NewAng}, NewUser), Users)};
+				_ -> Result = {Queue, Users}
+			end;
+		{release, "d", Sock} -> 
+			case dict:is_key(Sock, Users) of
+				true ->
+					User = dict:fetch(Sock, Users),
+					{Linear, Ang} = dict:fetch("a", User),
+					{V, _} = dict:fetch("v", User),
+					NewAng = Ang - minAng(),
+					NewUser = dict:store("v", {V, 0}, User),
+					Result  = {Queue, dict:store(Sock,dict:store("a", {Linear, NewAng}, NewUser), Users)};
+				_ -> Result = {Queue, Users}
+			end;
 		_ -> Result = {Queue, Users}
 	after timeout() -> Result = {Queue, Users} 
 	end,

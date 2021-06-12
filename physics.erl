@@ -164,7 +164,7 @@ collision_handler(LMPid, Users, Creatures, Obstacles) ->
 
 check_user_death (_, []) -> ok;
 check_user_death (LMPid, [{K,U} | Us]) ->
-	Flag = dict:fetch("collision_flag", U),
+	Flag = dict:fetch("death_flag", U),
 	Size = dict:fetch("size", U),
 	case (Flag) and (Size =< minSize()) of
 		true -> gamemanager ! {user_left, K, LMPid, "lost"}; 
@@ -174,7 +174,7 @@ check_user_death (LMPid, [{K,U} | Us]) ->
 
 obstacle_collisions([], _, _, Users, _) -> dict:from_list(Users);
 obstacle_collisions([{K,U} | Us], [], Obstacles, Users, Flag) -> 
-	NewU = dict:store("collision_flag", Flag, U),
+	NewU = dict:store("death_flag", Flag, dict:store("collision_flag", Flag, U)),
 	obstacle_collisions (Us, Obstacles, Obstacles, [{K, NewU} | Users], false);
 obstacle_collisions([{K,U} | Us], [O | Os], Obstacles, Users, Flag) ->
 	ColFlag = dict:fetch("collision_flag", U),
@@ -218,7 +218,7 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 					Flag = true,
 					NewSize = Size
 			end,
-			NUser = dict:store("collision_flag", Flag, dict:store("size", NewSize, U)),
+			NUser = dict:store("death_flag", Flag, dict:store("size", NewSize, U)),
 			NewUser = dict:store("agility", NewPoints, NUser),
 			gamemanager ! {creature_died, KC},
 			NewCreatures = dict:erase(KC, Creatures);
@@ -248,7 +248,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 					{NSize1, NSize2} = {math:sqrt(Size1*Size1 + Size2*Size2 / 2), Size2 / math:sqrt(2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
 					{{_, Points1}, Points2} = {threshold(dict:fetch("agility", U1)-1, 0, maxAgilityPoints()), maxAgilityPoints()},
-					{Score1, Score2} = {dict:fetch("score", U1)+1, 0},
+					{Score1, Score2} = {dict:fetch("score", U1)+1.0, 0.0},
 					U2N1 = dict:store("pos", NewPos2, U2),
 					{U1N2, U2N2} = {dict:store("size", NewSize1, U1), dict:store("size", NewSize2, U2N1)},
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
@@ -262,7 +262,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 					{NSize1, NSize2} = {Size1 / math:sqrt(2), math:sqrt(Size2*Size2 + Size1*Size1 / 2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
 					{Points1, {_, Points2}} = {maxAgilityPoints(), threshold(dict:fetch("agility", U2)-1, 0, maxAgilityPoints())},
-					{Score1, Score2} = {0, dict:fetch("score", U2)+1},
+					{Score1, Score2} = {0.0, dict:fetch("score", U2)+1.0},
 					U1N1 = dict:store("pos", NewPos1, U1),
 					{U1N2, U2N2} = {dict:store("size", NewSize1, U1N1), dict:store("size", NewSize2, U2)},
 					{U1N3, U2N3} = {dict:store("agility", Points1, U1N2), dict:store("agility", Points2, U2N2)},
@@ -274,8 +274,12 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 			LMPid ! {update_score, dict:fetch("name", U2), Score2};
 		_ -> {NewU1, NewU2} = {U1, U2}
 	end,
+	case dict:is_key(K2, dict:from_list(Us1)) of
+		true -> NewUs1 = dict:to_list(dict:store(K2, NewU2, dict:from_list(Us1)));
+		_ -> NewUs1 = Us1
+	end,
 	NewUsers = dict:store(K2, NewU2, dict:store(K1, NewU1, Users)),
-	user_user_collisions (LMPid, [{K1,NewU1} | Us1], Us2, NewUsers, Obstacles).
+	user_user_collisions (LMPid, [{K1,NewU1} | NewUs1], Us2, NewUsers, Obstacles).
 
 creature_collision ([], Creatures) -> Creatures;
 creature_collision ([C | Cs], Creatures) ->
@@ -321,9 +325,9 @@ wall_collision (User) ->
 	Flag = 
 		if 
 			CU or CD or CR or CL -> true;
-			true -> dict:fetch("collision_flag", User)
+			true -> dict:fetch("death_flag", User)
 		end,
-	NewUser = dict:store("collision_flag", Flag, dict:store("theta", NewTheta, User)),
+	NewUser = dict:store("death_flag", Flag, dict:store("theta", NewTheta, User)),
 	NewUser.
 
 getV (User) -> 
@@ -367,7 +371,7 @@ spawnCreatures(SpawnTime, Creatures, Obstacles) ->
 			C4 = dict:store("theta", 2*math:pi()*rand:uniform(), C3),
 			C5 = dict:store("a", {0, 0}, C4),
 			C6 = dict:store("timers", {timenow(), creatureWaitTurn(), creatureTurningTime()}, C5),
-			C7 = dict:store("collision_flag", false, C6),
+			C7 = dict:store("death_flag", false, dict:store("collision_flag", false, C6)),
 			case rand:uniform() > 0.5 of
 				true -> Key = "green";
 				_ -> Key = "red"
