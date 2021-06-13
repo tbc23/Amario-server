@@ -8,7 +8,7 @@
 spawn_time() -> 5.
 timenow() -> erlang:monotonic_time(millisecond) .
 screenRatio() -> 16/9.
-creatureV() -> maxV(minSize()) * 1.25.
+creatureV() -> maxV(minSize()) * 0.8.
 minV() -> 1/10 . % 10s to fo from bottom to top of screen
 maxV(Size) -> minSize() / (2 * Size) . % 1.5s to go from bottom to top of screen if minSize
 maxW() -> 2 * math:pi() / 1 .
