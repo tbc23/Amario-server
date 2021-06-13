@@ -3,6 +3,6 @@
 
 start (LMPort, GMPort) -> 
 	spawn(fun() -> loginmanager:start(LMPort) end), 
-	timer:sleep(5000),
+	timer:sleep(200),
 	spawn(fun() -> gamemanager:start(GMPort) end).
 

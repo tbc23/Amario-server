@@ -5,7 +5,7 @@ stop (Server) -> Server ! stop.
 
 start (Port) ->
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
-	io:format("LMSocket: ~p~n", [LSock]),
+	io:format("~nLMSocket: ~p~n", [LSock]),
 	spawn(fun() -> startlm() end),
 	spawn(fun() -> acceptor(LSock) end),
 	receive stop -> ok end.
@@ -13,7 +13,6 @@ start (Port) ->
 acceptor (LSock) ->
 	{ok, Sock} = gen_tcp:accept(LSock),
 	spawn(fun() -> acceptor(LSock) end),	
-	io:format("User entered lobby~n", []),
 	parse_requests (Sock).
 
 parse_requests (Sock) ->
@@ -79,7 +78,6 @@ login (Sock, Args) ->
 
 logout (Sock, Args) -> 
 	[User, Pass] = Args,
-	io:format("Req: Logout | User: ~p | Pass: ~p~n", [User, Pass]),
 	server_call (Sock, {logout, User, Pass}).
 
 leaderboard (Sock, Args) -> 
@@ -130,7 +128,7 @@ loop (Users) ->
 					From ! {wrong_authentication, loginmanager},
 					loop (Users)
 			end;
-		{{logout, User, Pass}, From} ->
+		{{logout, User, _}, From} ->
 			case dict:find(User, Users) of
 				error -> 
 					From ! {user_not_found, loginmanager},

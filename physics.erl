@@ -1,7 +1,7 @@
 -module(physics).
 -import(vectors,[norm/1,dot/2,add/2,toPolar/1,fromPolar/1,mult/2]).
--export([update_step/3,collision_handler/4,spawnCreatures/3]).
--export([timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0]).
+-export([update_step/3,collision_handler/4,spawnCreatures/3,minSize/0]).
+-export([timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0,maxSize/0]).
 -export([minLinear/0,minAng/0,gen_obstacles/2,minObstacles/0,maxObstacles/0]).
 -export([spawnPosition/3]).
 
@@ -228,10 +228,6 @@ user_creature_collisions ([{KU,U} | Us], [{KC,C} | Cs], Users, Creatures) ->
 
 user_user_collisions (_, [], _, Users, _) -> Users;
 user_user_collisions (LMPid, [_ | Us], [], Users, Obstacles) -> 
-	%case length(Us) == 0 of
-	%	false -> [_ | T] = Us;
-	%	_ -> T = []
-	%end,
 	user_user_collisions (LMPid, Us, dict:to_list(Users), Users, Obstacles);
 user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,_} | Us2], Users, Obstacles) when K1 == K2 -> 
 	user_user_collisions(LMPid, [{K1,U1} | Us1], Us2, Users, Obstacles);
@@ -242,8 +238,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 		true -> 
 			case Size1 > Size2 of
 				true -> 
-					io:format("Colliding~n"),
-					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users)],
+					PosNotAllowed = Obstacles ++ [U || {_,U} <- dict:to_list(Users)],
 					NewPos2 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed), 
 					{NSize1, NSize2} = {math:sqrt(Size1*Size1 + Size2*Size2 / 2), Size2 / math:sqrt(2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
@@ -256,8 +251,7 @@ user_user_collisions (LMPid, [{K1,U1} | Us1], [{K2,U2} | Us2], Users, Obstacles)
 					{U1N4,U2N4} = {U1N3, U2N3},
 					{NewU1, NewU2} = {dict:store("score", Score1, U1N4), dict:store("score", Score2, U2N4)};
 				_ -> 
-					io:format("Colliding~n"),
-					PosNotAllowed = Obstacles ++ [U || {K,U} <- dict:to_list(Users)],
+					PosNotAllowed = Obstacles ++ [U || {_,U} <- dict:to_list(Users)],
 					NewPos1 = spawnPosition({rand:uniform()*screenRatio(),rand:uniform()}, PosNotAllowed, PosNotAllowed),
 					{NSize1, NSize2} = {Size1 / math:sqrt(2), math:sqrt(Size2*Size2 + Size1*Size1 / 2)},
 					{{_, NewSize1}, {_, NewSize2}} = {threshold(NSize1, minSize(), maxSize()), threshold(NSize2, minSize(), maxSize())},
@@ -394,9 +388,3 @@ threshold(Value, Min, Max) ->
 			Value > Max -> {max, Max};
 			true -> {none, Value}
 		end.
-
-sign (Value) ->
-	if 
-		Value < 0 -> -1;
-		true -> 1
-	end.

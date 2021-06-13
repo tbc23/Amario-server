@@ -1,6 +1,6 @@
 -module(gamemanager).
 -import(physics,[update_step/3,collision_handler/4,spawnCreatures/3,spawnPosition/3]).
--import(physics,[timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0]).
+-import(physics,[timenow/0,epsilon/0,minV/0,screenRatio/0,spawnSize/0,minSize/0,maxSize/0]).
 -import(physics,[minLinear/0,minAng/0,minObstacles/0,maxObstacles/0,minObstacleSize/0,maxObstacleSize/0,gen_obstacles/2]).
 -export([start/1]).
 
@@ -10,6 +10,7 @@ queueMax() -> 3 .
 start (Port) ->
 	LMPid = whereis(loginmanager),
 	{ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}]),
+	io:format("GMSocket: ~p~n", [LSock]),
 	NumObstacles = round(minObstacles() + (maxObstacles() - minObstacles()) * rand:uniform()),
 	Obstacles = gen_obstacles([], NumObstacles),
 	register(gamemanager, spawn(fun() -> game(LMPid, dict:new(), dict:new(), Obstacles, timenow(), 0, []) end)),
@@ -19,7 +20,6 @@ start (Port) ->
 acceptor (LMPid, LSock) ->
 	{ok, Sock} = gen_tcp:accept(LSock),
 	spawn(fun() -> acceptor(LMPid, LSock) end),
-	io:format("User entered game lobby~n", []),
 	parse_requests (LMPid, Sock).
 
 parse_requests (LMPid, Sock) ->
@@ -132,9 +132,10 @@ user_handler(Users, Obstacles, Queue) ->
 		{ok, User, Sock, loginmanager} when Size < 3 ->
 			NewUser = createPlayer(User, Users, Obstacles),
 			Result = {Queue, dict:store(Sock, NewUser, Users)},
-			io:format("USER ADDED~n"),
 			gen_tcp:send(Sock, list_to_binary("user added\n")),
-			gen_tcp:send(Sock, list_to_binary("obstacles " ++ integer_to_list(length(Obstacles)) ++ "\n")),
+			Str = "obstacles " ++ integer_to_list(length(Obstacles)),
+			Str1 = Str ++ " " ++ float_to_list(minSize()) ++ " " ++ float_to_list(maxSize()) ++ "\n",
+			gen_tcp:send(Sock, list_to_binary(Str1)),
 			[sendObstacle (O, Sock) || O <- Obstacles];
 		{ok, _, Sock, loginmanager} when length(Queue) >= QMax -> 
 			gen_tcp:send(Sock, list_to_binary("game full\n")),
@@ -154,7 +155,6 @@ user_handler(Users, Obstacles, Queue) ->
 							gamemanager ! {ok, HUser, HSock, loginmanager};
 						_ -> NewQueue = Queue
 					end,
-					io:format("User removed~n"),
 					User = dict:fetch(Sock, Users),
 					Name = dict:fetch("name", User),
 					Result = {NewQueue, dict:erase(Sock, Users)},
